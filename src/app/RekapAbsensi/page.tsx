@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import toast, { Toaster } from 'react-hot-toast'
 
-// Komponen untuk badge status berwarna
 const StatusBadge = ({ status }: { status: string }) => {
   let styles = ''
   switch (status) {
@@ -24,11 +23,7 @@ const StatusBadge = ({ status }: { status: string }) => {
       styles = 'bg-gray-100 text-gray-800'
       status = 'Tidak Hadir'
   }
-  return (
-    <div className={`px-3 py-1 text-sm font-medium rounded-md ${styles}`}>
-      {status}
-    </div>
-  )
+  return <div className={`px-3 py-1 text-sm font-medium rounded-md ${styles}`}>{status}</div>
 }
 
 export default function RekapAbsensiPage() {
@@ -37,50 +32,40 @@ export default function RekapAbsensiPage() {
   const [loading, setLoading] = useState(false)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [mounted, setMounted] = useState(false) // ✅ flag untuk client-only render
 
-  // Ambil data logbook
-  const fetchData = async () => {
-    setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
+  useEffect(() => {
+    setMounted(true)
 
-    if (!user) {
-      toast.error('User tidak ditemukan')
+    const fetchData = async () => {
+      setLoading(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        toast.error('User tidak ditemukan')
+        setLoading(false)
+        return
+      }
+
+      let query = supabase
+        .from('logbooks')
+        .select('id, log_date, start_time, end_time, status')
+        .eq('user_id', user.id)
+        .order('log_date', { ascending: false })
+
+      if (startDate && endDate) query = query.gte('log_date', startDate).lte('log_date', endDate)
+
+      const { data: logbooks, error } = await query
+      if (error) {
+        console.error(error)
+        toast.error('Gagal mengambil data absensi')
+      } else setData(logbooks || [])
+
       setLoading(false)
-      return
     }
 
-    let query = supabase
-      .from('logbooks')
-      .select('id, log_date, start_time, end_time, status')
-      .eq('user_id', user.id)
-      .order('log_date', { ascending: false })
-
-    if (startDate && endDate) {
-      query = query.gte('log_date', startDate).lte('log_date', endDate)
-    }
-
-    const { data: logbooks, error } = await query
-
-    if (error) {
-      console.error(error)
-      toast.error('Gagal mengambil data absensi')
-    } else {
-      setData(logbooks || [])
-    }
-    setLoading(false)
-  }
-
-  useEffect(() => {
     fetchData()
-  }, [])
-
-  useEffect(() => {
-    if (startDate && endDate) {
-      fetchData()
-    }
   }, [startDate, endDate])
 
-  // Hitung statistik (hanya 3 status)
   const stats = useMemo(() => {
     const counts = { Hadir: 0, Terlambat: 0, 'Tidak Hadir': 0 }
     data.forEach((log) => {
@@ -91,7 +76,6 @@ export default function RekapAbsensiPage() {
     return { ...counts, totalHari: data.length }
   }, [data])
 
-  // Format tanggal Indonesia
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
     return date.toLocaleString('id-ID', {
@@ -108,20 +92,22 @@ export default function RekapAbsensiPage() {
 
       {/* Header */}
       <header className="bg-blue-800 text-white p-4 shadow-md flex items-center sticky top-0 z-10">
-        <button
-          onClick={() => router.back()}
-          className="p-2 mr-2 rounded-full hover:bg-blue-700"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-6 w-6"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
+        {mounted && (
+          <button
+            onClick={() => router.back()}
+            className="p-2 mr-2 rounded-full hover:bg-blue-700"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+        )}
         <h1 className="text-xl font-bold">Rekap Absensi</h1>
       </header>
 
@@ -190,14 +176,16 @@ export default function RekapAbsensiPage() {
         </section>
 
         {/* Tombol Kembali */}
-        <div className="mt-8 pb-4">
-          <button
-            onClick={() => router.push('/Dashboard')}
-            className="w-full bg-blue-900 hover:bg-blue-800 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105"
-          >
-            Kembali ke Dashboard
-          </button>
-        </div>
+        {mounted && (
+          <div className="mt-8 pb-4">
+            <button
+              onClick={() => router.push('/Dashboard')}
+              className="w-full bg-blue-900 hover:bg-blue-800 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105"
+            >
+              Kembali ke Dashboard
+            </button>
+          </div>
+        )}
       </main>
     </div>
   )
