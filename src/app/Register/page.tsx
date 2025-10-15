@@ -52,7 +52,7 @@ export default function RegisterPage() {
             position
           },
           // URL ini adalah URL yang akan dibuka setelah pengguna mengklik link di email.
-          emailRedirectTo: `${window.location.origin}/Login` 
+          emailRedirectTo: `${window.location.origin}/login` 
         }
       })
       
@@ -214,7 +214,7 @@ export default function RegisterPage() {
 
           <p className="text-center text-sm text-gray-600">
             Sudah punya akun?{' '}
-            <Link href="/Login" className="font-medium text-[#4A90E2] hover:text-[#003366]">
+            <Link href="/login" className="font-medium text-[#4A90E2] hover:text-[#003366]">
               Login di sini
             </Link>
           </p>

@@ -24,15 +24,15 @@ export default function SplashPage() {
             
             if (session) {
                 // Sesi ditemukan: Langsung ke Dashboard
-                router.replace('/Dashboard');
+                router.replace('/dashboard');
             } else {
                 // Sesi tidak ditemukan: Arahkan ke halaman Login
-                router.replace('/Login');
+                router.replace('/login');
             }
         } catch (error) {
             console.error("Gagal mengecek sesi Supabase:", error);
             // Jika ada error, tetap arahkan ke login sebagai fallback
-            router.replace('/Login');
+            router.replace('/login');
         } finally {
             setIsChecking(false);
         }

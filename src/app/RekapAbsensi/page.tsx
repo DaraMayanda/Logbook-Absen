@@ -179,7 +179,7 @@ export default function RekapAbsensiPage() {
         {mounted && (
           <div className="mt-8 pb-4">
             <button
-              onClick={() => router.push('/Dashboard')}
+              onClick={() => router.push('/dashboard')}
               className="w-full bg-blue-900 hover:bg-blue-800 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105"
             >
               Kembali ke Dashboard

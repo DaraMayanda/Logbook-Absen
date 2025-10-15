@@ -20,41 +20,48 @@ export default function CheckOutPage() {
   const [address, setAddress] = useState<string>('Mencari alamat...')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [locationStatus, setLocationStatus] = useState<string>('Mencari lokasi...')
+  const [canCheckOut, setCanCheckOut] = useState(false)
+  const [isFetchingLocation, setIsFetchingLocation] = useState(false)
+  const [isFetchingLogbook, setIsFetchingLogbook] = useState(true)
 
-  // Update waktu real-time
+  // Realtime clock
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000)
     return () => clearInterval(timer)
   }, [])
 
-  // Ambil lokasi pengguna + konversi ke alamat
-  const fetchLocation = async () => {
+  // Hitung jarak (Haversine)
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371e3
+    const φ1 = lat1 * Math.PI / 180
+    const φ2 = lat2 * Math.PI / 180
+    const Δφ = (lat2 - lat1) * Math.PI / 180
+    const Δλ = (lon2 - lon1) * Math.PI / 180
+    const a = Math.sin(Δφ / 2) ** 2 +
+              Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return R * c
+  }
+
+  // Ambil lokasi pengguna
+  const fetchLocation = () => {
     if (!navigator.geolocation) {
       setLocationStatus('Geolocation tidak didukung browser ini.')
       return
     }
 
+    setIsFetchingLocation(true)
     setLocationStatus('Mengambil lokasi...')
+
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const lat = pos.coords.latitude
         const lon = pos.coords.longitude
         setLocation({ lat, lon })
 
-        // Hitung jarak dari kantor
-        const R = 6371e3 // meter
-        const φ1 = OFFICE_LOCATION.latitude * Math.PI / 180
-        const φ2 = lat * Math.PI / 180
-        const Δφ = (lat - OFFICE_LOCATION.latitude) * Math.PI / 180
-        const Δλ = (lon - OFFICE_LOCATION.longitude) * Math.PI / 180
-        const a =
-          Math.sin(Δφ / 2) ** 2 +
-          Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-        const dist = R * c
+        const dist = calculateDistance(lat, lon, OFFICE_LOCATION.latitude, OFFICE_LOCATION.longitude)
         setDistance(dist)
 
-        // Ambil alamat via OpenStreetMap
         try {
           const res = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`
@@ -65,20 +72,21 @@ export default function CheckOutPage() {
           setAddress('Gagal mendapatkan alamat')
         }
 
-        // Tentukan status lokasi
-        if (dist <= OFFICE_LOCATION.RADIUS_M) {
-          setLocationStatus('Lokasi valid (dalam radius kantor)')
-        } else {
-          setLocationStatus('Di luar radius kantor')
-        }
+        setLocationStatus(
+          dist <= OFFICE_LOCATION.RADIUS_M
+            ? 'Lokasi valid (dalam radius kantor)'
+            : 'Di luar radius kantor'
+        )
+        setIsFetchingLocation(false)
       },
       (error) => {
         console.error(error)
-        if (error.code === error.PERMISSION_DENIED) {
-          setLocationStatus('Akses lokasi ditolak.')
-        } else {
-          setLocationStatus('Gagal mendapatkan lokasi.')
-        }
+        setLocationStatus(
+          error.code === error.PERMISSION_DENIED
+            ? 'Akses lokasi ditolak.'
+            : 'Gagal mendapatkan lokasi.'
+        )
+        setIsFetchingLocation(false)
       }
     )
   }
@@ -87,33 +95,49 @@ export default function CheckOutPage() {
     fetchLocation()
   }, [])
 
-  // Format waktu dan tanggal
-  const formattedTime = currentTime.toLocaleTimeString('id-ID', {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-  const formattedDate = currentTime.toLocaleDateString('id-ID', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
+  // Fetch logbook hari ini untuk menentukan tombol aktif
+  const fetchLogbookStatus = async () => {
+    setIsFetchingLogbook(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+
+      const today = new Date().toISOString().split('T')[0]
+
+      const { data: logbook, error } = await supabase
+        .from('logbooks')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('log_date', today)
+        .maybeSingle()
+
+      if (error) throw error
+
+      // Tombol aktif jika sudah check-in dan status belum 'Pulang'
+      setCanCheckOut(!!logbook && !!logbook.start_time && logbook.status !== 'Pulang')
+    } catch (err) {
+      console.error(err)
+      setCanCheckOut(false)
+    } finally {
+      setIsFetchingLogbook(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchLogbookStatus()
+  }, [])
+
+  const formattedTime = currentTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+  const formattedDate = currentTime.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   const handleCheckOut = async () => {
-    if (!location) {
-      toast.error('Lokasi belum terdeteksi.')
-      return
-    }
+    if (!location) return toast.error('Lokasi belum terdeteksi.')
 
-    // Validasi lokasi
     const isValidLocation =
       (distance && distance <= OFFICE_LOCATION.RADIUS_M) ||
       (address && address.toLowerCase().includes('lhokseumawe'))
 
-    if (!isValidLocation) {
-      toast.error('Lokasi di luar area kantor.')
-      return
-    }
+    if (!isValidLocation) return toast.error('Lokasi di luar area kantor.')
 
     setIsSubmitting(true)
     try {
@@ -125,16 +149,16 @@ export default function CheckOutPage() {
       }
 
       const now = new Date()
-      const jamPulang = now.toLocaleTimeString('en-US', { hour12: false })
+      const jamPulang = now.toLocaleTimeString('en-GB', { hour12: false })
       const tanggalHariIni = now.toISOString().split('T')[0]
 
-      // Update logbook (absen pulang hari ini)
       const { error } = await supabase
         .from('logbooks')
         .update({
           end_time: jamPulang,
           position_at_time: address,
           description: 'Absen Pulang',
+          status: 'Pulang'
         })
         .eq('user_id', user.id)
         .eq('log_date', tanggalHariIni)
@@ -142,10 +166,10 @@ export default function CheckOutPage() {
       if (error) throw error
 
       toast.success('Absen Pulang Berhasil!')
-      router.replace('/Dashboard')
-    } catch (err) {
+      router.replace('/dashboard')
+    } catch (err: any) {
       console.error(err)
-      toast.error('Gagal menyimpan absen.')
+      toast.error(`Gagal menyimpan absen: ${err.message}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -153,12 +177,8 @@ export default function CheckOutPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans">
-      {/* Header */}
       <header className="bg-blue-900 text-white p-4 shadow-lg flex items-center">
-        <button
-          onClick={() => router.back()}
-          className="p-1 mr-4 text-white hover:text-gray-300 transition"
-        >
+        <button onClick={() => router.back()} className="p-1 mr-4 text-white hover:text-gray-300 transition">
           <ArrowLeft size={24} />
         </button>
         <h1 className="text-xl font-bold">Absen Pulang</h1>
@@ -169,60 +189,36 @@ export default function CheckOutPage() {
         <div className="bg-white p-8 rounded-xl shadow-lg mb-8 text-center">
           <Clock size={48} className="text-gray-700 mx-auto mb-4" />
           <p className="text-lg font-semibold text-gray-700">Waktu Saat Ini</p>
-          <h2 className="text-5xl font-extrabold text-gray-900 mb-1">
-            {formattedTime}
-          </h2>
+          <h2 className="text-5xl font-extrabold text-gray-900 mb-1">{formattedTime}</h2>
           <p className="text-md text-gray-500">{formattedDate}</p>
         </div>
 
         {/* Lokasi */}
         <div className="bg-white p-4 rounded-xl shadow-md border mb-5">
           <p className="font-semibold text-gray-700 mb-1">Status Lokasi:</p>
-          <p
-            className={`text-sm ${
-              distance && distance <= OFFICE_LOCATION.RADIUS_M
-                ? 'text-green-600'
-                : 'text-red-600'
-            }`}
-          >
-            {locationStatus}
+          <p className={`text-sm ${distance && distance <= OFFICE_LOCATION.RADIUS_M ? 'text-green-600' : 'text-red-600'}`}>
+            {locationStatus} {isFetchingLocation && '(Memuat...)'}
           </p>
 
-          {/* Tambahan jarak */}
-          {distance !== null && (
-            <p className="mt-1 text-sm text-gray-600">
-              Jarak dari kantor: <b>{distance.toFixed(1)} meter</b>
-            </p>
-          )}
-
-          <p className="mt-2 text-sm text-gray-600">
-            <b>Alamat Saat Ini:</b>
-            <br />
-            {address}
-          </p>
-          <p className="mt-2 text-xs text-gray-400">
-            Koordinat:{' '}
-            {location
-              ? `${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}`
-              : '...'}
-          </p>
+          {distance !== null && <p className="mt-1 text-sm text-gray-600">Jarak dari kantor: <b>{distance.toFixed(1)} meter</b></p>}
+          <p className="mt-2 text-sm text-gray-600"><b>Alamat Saat Ini:</b><br />{address}</p>
+          <p className="mt-2 text-xs text-gray-400">Koordinat: {location ? `${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}` : '...'}</p>
 
           <button
             onClick={fetchLocation}
+            disabled={isFetchingLocation}
             className="mt-3 bg-blue-900 hover:bg-blue-800 text-white text-sm font-semibold py-2 px-3 rounded-lg"
           >
             Ambil Ulang Lokasi
           </button>
         </div>
 
-        {/* Tombol Absen Pulang */}
+        {/* Tombol Submit */}
         <button
           onClick={handleCheckOut}
-          disabled={isSubmitting}
+          disabled={!canCheckOut || isSubmitting || !location || isFetchingLogbook}
           className={`w-full py-4 text-white font-extrabold rounded-xl transition duration-300 shadow-xl ${
-            isSubmitting
-              ? 'bg-gray-400 cursor-not-allowed'
-              : 'bg-blue-900 hover:bg-blue-800 shadow-blue-500/50'
+            isSubmitting ? 'bg-gray-400 cursor-not-allowed' : canCheckOut ? 'bg-blue-900 hover:bg-blue-800 shadow-blue-500/50' : 'bg-gray-400 cursor-not-allowed'
           }`}
         >
           {isSubmitting ? 'Memproses...' : 'SUBMIT ABSEN PULANG'}
@@ -230,10 +226,7 @@ export default function CheckOutPage() {
 
         <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 text-center">
           <p className="font-semibold text-blue-900 mb-1">Catatan:</p>
-          <p>
-            Absen akan dianggap valid jika dalam radius 500 meter dari kantor,
-            atau alamat terdeteksi di wilayah Lhokseumawe.
-          </p>
+          <p>Absen akan dianggap valid jika dalam radius 500 meter dari kantor atau alamat terdeteksi di wilayah Lhokseumawe.</p>
         </div>
       </main>
     </div>

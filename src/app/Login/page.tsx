@@ -48,7 +48,7 @@ export default function LoginPage() {
       }
 
       // Redirect ke Dashboard
-      router.push('/Dashboard')
+      router.push('/dashboard')
     } catch (err: any) {
       console.error('Login error:', err)
       setError(err.message || 'Terjadi kesalahan saat login.')
@@ -114,7 +114,7 @@ export default function LoginPage() {
 
           <p className="text-center text-sm text-gray-600">
             Belum punya akun?{' '}
-            <Link href="/Register" className="font-medium text-[#4A90E2] hover:text-[#003366]">Sign Up</Link>
+            <Link href="/register" className="font-medium text-[#4A90E2] hover:text-[#003366]">Sign Up</Link>
           </p>
         </div>
       </div>

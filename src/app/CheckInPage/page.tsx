@@ -12,7 +12,7 @@ const OFFICE_LOCATION = {
   RADIUS_M: 500,
 }
 
-export default function CheckInPage() {
+export default function checkinpage() {
   const router = useRouter()
   const [currentTime, setCurrentTime] = useState(new Date())
   const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null)
@@ -27,13 +27,12 @@ export default function CheckInPage() {
     return () => clearInterval(timer)
   }, [])
 
-  // Ambil lokasi pengguna + konversi ke alamat
+  // Ambil lokasi
   const fetchLocation = async () => {
     if (!navigator.geolocation) {
       setLocationStatus('Geolocation tidak didukung browser ini.')
       return
     }
-
     setLocationStatus('Mengambil lokasi...')
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
@@ -41,8 +40,7 @@ export default function CheckInPage() {
         const lon = pos.coords.longitude
         setLocation({ lat, lon })
 
-        // Hitung jarak dari kantor
-        const R = 6371e3 // meter
+        const R = 6371e3
         const φ1 = OFFICE_LOCATION.latitude * Math.PI / 180
         const φ2 = lat * Math.PI / 180
         const Δφ = (lat - OFFICE_LOCATION.latitude) * Math.PI / 180
@@ -54,7 +52,7 @@ export default function CheckInPage() {
         const dist = R * c
         setDistance(dist)
 
-        // Ambil alamat via OpenStreetMap Nominatim API
+        // Ambil alamat dari Nominatim
         try {
           const res = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`
@@ -65,7 +63,7 @@ export default function CheckInPage() {
           setAddress('Gagal mendapatkan alamat')
         }
 
-        // Tentukan status lokasi
+        // Status lokasi
         if (dist <= OFFICE_LOCATION.RADIUS_M) {
           setLocationStatus('Lokasi valid (dalam radius kantor)')
         } else {
@@ -74,11 +72,8 @@ export default function CheckInPage() {
       },
       (error) => {
         console.error(error)
-        if (error.code === error.PERMISSION_DENIED) {
-          setLocationStatus('Akses lokasi ditolak.')
-        } else {
-          setLocationStatus('Gagal mendapatkan lokasi.')
-        }
+        if (error.code === error.PERMISSION_DENIED) setLocationStatus('Akses lokasi ditolak.')
+        else setLocationStatus('Gagal mendapatkan lokasi.')
       }
     )
   }
@@ -87,25 +82,14 @@ export default function CheckInPage() {
     fetchLocation()
   }, [])
 
-  // Format waktu dan tanggal
-  const formattedTime = currentTime.toLocaleTimeString('id-ID', {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-  const formattedDate = currentTime.toLocaleDateString('id-ID', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
+  const formattedTime = currentTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+  const formattedDate = currentTime.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   const handleCheckIn = async () => {
     if (!location) {
       toast.error('Lokasi belum terdeteksi.')
       return
     }
-
-    // Validasi lokasi (boleh absen jika jarak < 500m meski alamat bukan “Lhokseumawe”)
     const isValidLocation =
       (distance && distance <= OFFICE_LOCATION.RADIUS_M) ||
       (address && address.toLowerCase().includes('lhokseumawe'))
@@ -129,18 +113,20 @@ export default function CheckInPage() {
       const batasJamMasuk = '08:00:00'
       const status = jamMasuk > batasJamMasuk ? 'Terlambat' : 'Hadir'
 
+      // ✅ Logbook dibuat tapi activity_name/description kosong
       const { error } = await supabase.from('logbooks').insert({
         user_id: user.id,
         log_date: now.toISOString().split('T')[0],
         start_time: jamMasuk,
         position_at_time: address,
-        description: 'Absen Masuk',
+        description: '', // kosong supaya Dashboard alert “Segera isi logbook”
         status,
       })
 
       if (error) throw error
       toast.success(`Absen berhasil (${status})`)
-      router.replace('/Dashboard')
+
+      router.replace('/dashboard')
     } catch (err) {
       console.error(err)
       toast.error('Gagal menyimpan absen.')
@@ -151,25 +137,17 @@ export default function CheckInPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans">
-      {/* Header */}
       <header className="bg-blue-900 text-white p-4 shadow-lg flex items-center">
-        <button
-          onClick={() => router.back()}
-          className="p-1 mr-4 text-white hover:text-gray-300 transition"
-        >
-          <ArrowLeft size={24} />
-        </button>
+        <button onClick={() => router.back()} className="p-1 mr-4 text-white hover:text-gray-300 transition"><ArrowLeft size={24} /></button>
         <h1 className="text-xl font-bold">Absen Masuk</h1>
       </header>
 
       <main className="p-6">
-        {/* Waktu */}
+        {/* Jam */}
         <div className="bg-white p-8 rounded-xl shadow-lg mb-8 text-center">
           <Clock size={48} className="text-gray-700 mx-auto mb-4" />
           <p className="text-lg font-semibold text-gray-700">Waktu Saat Ini</p>
-          <h2 className="text-5xl font-extrabold text-gray-900 mb-1">
-            {formattedTime}
-          </h2>
+          <h2 className="text-5xl font-extrabold text-gray-900 mb-1">{formattedTime}</h2>
           <p className="text-md text-gray-500">{formattedDate}</p>
         </div>
 
@@ -179,35 +157,20 @@ export default function CheckInPage() {
           <p className={`text-sm ${distance && distance <= OFFICE_LOCATION.RADIUS_M ? 'text-green-600' : 'text-red-600'}`}>
             {locationStatus}
           </p>
-
-          {/* Tambahan jarak */}
-          {distance !== null && (
-            <p className="mt-1 text-sm text-gray-600">
-              Jarak dari kantor: <b>{distance.toFixed(1)} meter</b>
-            </p>
-          )}
-
+          {distance !== null && <p className="mt-1 text-sm text-gray-600">Jarak dari kantor: <b>{distance.toFixed(1)} meter</b></p>}
           <p className="mt-2 text-sm text-gray-600"><b>Alamat Saat Ini:</b><br />{address}</p>
-          <p className="mt-2 text-xs text-gray-400">
-            Koordinat: {location ? `${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}` : '...'}
-          </p>
+          <p className="mt-2 text-xs text-gray-400">Koordinat: {location ? `${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}` : '...'}</p>
 
-          <button
-            onClick={fetchLocation}
-            className="mt-3 bg-blue-900 hover:bg-blue-800 text-white text-sm font-semibold py-2 px-3 rounded-lg"
-          >
+          <button onClick={fetchLocation} className="mt-3 bg-blue-900 hover:bg-blue-800 text-white text-sm font-semibold py-2 px-3 rounded-lg">
             Ambil Ulang Lokasi
           </button>
         </div>
 
-        {/* Tombol Absen */}
         <button
           onClick={handleCheckIn}
           disabled={isSubmitting}
           className={`w-full py-4 text-white font-extrabold rounded-xl transition duration-300 shadow-xl ${
-            isSubmitting
-              ? 'bg-gray-400 cursor-not-allowed'
-              : 'bg-blue-900 hover:bg-blue-800 shadow-blue-500/50'
+            isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-900 hover:bg-blue-800 shadow-blue-500/50'
           }`}
         >
           {isSubmitting ? 'Memproses...' : 'SUBMIT ABSEN MASUK'}

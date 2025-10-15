@@ -109,7 +109,7 @@ export default function PengajuanCutiPage() {
     setReason('')
     setLoading(false)
 
-    setTimeout(() => router.push('/Dashboard'), 1200)
+    setTimeout(() => router.push('/dashboard'), 1200)
   }
 
   if (!mounted) return null // SSR safe
