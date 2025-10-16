@@ -27,7 +27,6 @@ interface UserData {
 interface FormData {
   date: string;
   startTime: string;
-  endTime: string;
   description: string;
 }
 
@@ -48,29 +47,6 @@ interface TextareaFieldProps {
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
 }
 
-interface TaskInputSectionProps {
-  tasks: string[];
-  currentTaskInput: string;
-  handleTaskInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  autocompleteSuggestions: string[];
-  addTask: (taskToAdd?: string) => void;
-  removeTask: (index: number) => void;
-}
-
-// --- Standard tasks ---
-const standardTasks: string[] = [
-  "Pelaksanaan rekonsiliasi laporan keuangan",
-  "Verifikasi Surat Perintah Membayar (SPM)",
-  "Penyusunan Laporan Pertanggungjawaban (LPJ)",
-  "Input data transaksi ke sistem SAKTI",
-  "Pelayanan konsultasi anggaran",
-  "Monitoring dan evaluasi kinerja PPNPN",
-  "Administrasi persuratan dan kearsipan",
-  "Rapat koordinasi internal",
-  "Pengarsipan dokumen dinas",
-  "Penyelesaian naskah dinas",
-];
-
 // --- Main component ---
 export default function LogbookPage() {
   const router = useRouter();
@@ -78,33 +54,46 @@ export default function LogbookPage() {
 
   const [userId, setUserId] = useState<string | null>(null);
   const [userData, setUserData] = useState<UserData>({ fullName: '', position: 'Staf Pelaksana' });
-
   const [logbookIdToUpdate, setLogbookIdToUpdate] = useState<number | null>(null);
   const [isLogbookCompleted, setIsLogbookCompleted] = useState<boolean>(false);
+  const [hasCheckedIn, setHasCheckedIn] = useState<boolean>(false);
 
   const [tasks, setTasks] = useState<string[]>([]);
-  const [currentTaskInput, setCurrentTaskInput] = useState<string>('');
-  const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<string[]>([]);
-
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [error, setError] = useState<string>('');
-  const [hasCheckedIn, setHasCheckedIn] = useState<boolean>(false); 
+  const [selectedTask, setSelectedTask] = useState<string>(''); // Combo box
+  const [otherTask, setOtherTask] = useState<string>(''); // Input "Lainnya"
 
   const [formData, setFormData] = useState<FormData>({
     date: today,
     startTime: '08:00',
-    endTime: new Date().toTimeString().substring(0, 5),
     description: '',
   });
 
-  // Fetch user, profile, and check logbook status
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
+
+  // --- Daftar tugas tetap (PPNPN di KPPN)
+  const standardTasks: string[] = [
+    "Pengarsipan dokumen SPM dan SP2D",
+    "Input data SPM ke aplikasi SAKTI",
+    "Distribusi surat dan dokumen internal",
+    "Membantu verifikasi dokumen SPM",
+    "Penyusunan laporan harian",
+    "Pendistribusian dokumen LHP dan LPJ",
+    "Pemindaian (scan) arsip penting",
+    "Pelayanan konsultasi tamu dan satker",
+    "Rekapitulasi surat masuk/keluar",
+    "Rapat atau kegiatan koordinasi internal",
+    "Lainnya",
+  ];
+
+  // --- Fetch user data & logbook
   useEffect(() => {
     const fetchUserData = async () => {
       setIsLoading(true);
       setError('');
-      setLogbookIdToUpdate(null);
       setIsLogbookCompleted(false);
+      setLogbookIdToUpdate(null);
 
       try {
         const { data: { user }, error: userErr } = await supabase.auth.getUser();
@@ -113,7 +102,6 @@ export default function LogbookPage() {
         setUserId(user.id);
         const defaultFullNameFromEmail = user.email ? user.email.split('@')[0] : 'Pegawai';
 
-        // Fetch profile
         const { data: profileData } = await supabase
           .from('profiles')
           .select('full_name, position')
@@ -125,38 +113,29 @@ export default function LogbookPage() {
           position: profileData?.position || 'Staf Pelaksana',
         });
 
-        // Check today's logbook
-        const { data: checkInEntry } = await supabase
+        const { data: logbookData } = await supabase
           .from('logbooks')
-          .select('id, start_time, status, activity_name')
+          .select('id, start_time, status')
           .eq('user_id', user.id)
           .eq('log_date', today)
           .maybeSingle();
 
-        if (!checkInEntry) {
+        if (!logbookData) {
           setHasCheckedIn(false);
           setError('Anda harus melakukan Absen Masuk terlebih dahulu sebelum mengisi Logbook.');
         } else {
           setHasCheckedIn(true);
-          setLogbookIdToUpdate(checkInEntry.id);
+          setLogbookIdToUpdate(logbookData.id);
+          setFormData(prev => ({ ...prev, startTime: logbookData.start_time?.substring(0, 5) || '08:00' }));
 
-          setFormData(prev => ({
-            ...prev,
-            startTime: checkInEntry.start_time.substring(0, 5),
-          }));
-
-          if (checkInEntry.status === 'COMPLETED') {
+          if (logbookData.status === 'COMPLETED') {
             setIsLogbookCompleted(true);
-            setError('Anda sudah mengisi Logbook Harian untuk tanggal ini.');
-            if (checkInEntry.activity_name) {
-              setTasks(checkInEntry.activity_name.split('; '));
-            }
+            setError('Anda sudah mengisi Logbook untuk hari ini.');
           }
         }
-
       } catch (err: any) {
         console.error(err);
-        setError(err.message || 'Terjadi kesalahan saat memuat data pengguna.');
+        setError(err.message || 'Terjadi kesalahan saat memuat data.');
       } finally {
         setIsLoading(false);
       }
@@ -165,34 +144,20 @@ export default function LogbookPage() {
     fetchUserData();
   }, [today]);
 
-  // Handlers
-  const handleTaskInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const input = e.target.value;
-    setCurrentTaskInput(input);
+  // --- Add / remove tasks ---
+  const addTask = () => {
+    let taskToAdd = selectedTask;
+    if (selectedTask === 'Lainnya' && otherTask.trim() !== '') taskToAdd = otherTask.trim();
+    if (!taskToAdd) return;
 
-    if (input.length > 2) {
-      const filtered = standardTasks.filter(t => t.toLowerCase().includes(input.toLowerCase()));
-      setAutocompleteSuggestions(filtered);
-    } else {
-      setAutocompleteSuggestions([]);
-    }
-  };
-
-  const addTask = (taskToAdd: string = currentTaskInput) => {
-    const trimmed = taskToAdd.trim();
-    if (!trimmed) return;
-    if (!tasks.includes(trimmed)) setTasks(prev => [...prev, trimmed]);
-    setCurrentTaskInput('');
-    setAutocompleteSuggestions([]);
+    if (!tasks.includes(taskToAdd)) setTasks(prev => [...prev, taskToAdd]);
+    setSelectedTask('');
+    setOtherTask('');
   };
 
   const removeTask = (index: number) => setTasks(prev => prev.filter((_, i) => i !== index));
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    if (name in formData) setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
+  // --- Submit handler ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -203,7 +168,7 @@ export default function LogbookPage() {
     }
 
     if (!logbookIdToUpdate) {
-      setError('ID Logbook untuk pembaruan tidak ditemukan. Coba refresh.');
+      setError('ID Logbook tidak ditemukan. Silakan refresh halaman.');
       return;
     }
 
@@ -215,38 +180,50 @@ export default function LogbookPage() {
     setIsSubmitting(true);
 
     try {
-      const payload = {
-        activity_name: tasks.join('; '),
-        description: formData.description || null,
-        end_time: formData.endTime,
-        status: 'COMPLETED',
-      };
+      // 🔹 Gabungkan semua tugas jadi string (dipisah titik koma)
+      const activityNameString = tasks.join('; ');
 
+      // 🔹 Update logbook: isi activity_name + description + status
       const { error: updateError } = await supabase
         .from('logbooks')
-        .update(payload)
+        .update({
+          activity_name: activityNameString,
+          description: formData.description || null,
+          status: 'COMPLETED',
+        })
         .eq('id', logbookIdToUpdate);
 
-      if (updateError) {
-        console.error('Gagal menyimpan Logbook:', updateError);
-        setError(`Gagal menyimpan data: ${updateError.message}`);
-      } else {
-        router.replace('/dashboard');
-      }
+      if (updateError) throw updateError;
+
+      // 🔹 (Opsional) hapus tasks lama agar tidak duplikat
+      await supabase.from('tasks').delete().eq('logbook_id', logbookIdToUpdate);
+
+      // 🔹 Simpan ulang semua task baru
+      const taskRows = tasks.map(task => ({
+        logbook_id: logbookIdToUpdate,
+        task_name: task,
+      }));
+      const { error: taskErr } = await supabase.from('tasks').insert(taskRows);
+      if (taskErr) throw taskErr;
+
+      router.replace('/dashboard');
     } catch (err: any) {
-      console.error('unexpected update error:', err);
+      console.error('Error saat update logbook:', err);
       setError('Terjadi kesalahan saat menyimpan logbook.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (isLoading) return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50">
-      <RefreshCw className="h-8 w-8 animate-spin text-blue-700" />
-      <p className="ml-4 text-gray-600 font-semibold">Memuat data...</p>
-    </div>
-  );
+  // --- Render ---
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <RefreshCw className="h-8 w-8 animate-spin text-blue-700" />
+        <p className="ml-4 text-gray-600 font-semibold">Memuat data...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans p-4 sm:p-6">
@@ -270,26 +247,71 @@ export default function LogbookPage() {
           <InputField label="Jabatan" value={userData.position} icon={Briefcase} readOnly />
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
-          <InputField label="Tanggal" name="date" type="date" value={formData.date} onChange={handleChange} icon={Calendar} readOnly />
-          <InputField label="Jam Mulai (Absen Masuk)" name="startTime" type="time" value={formData.startTime} onChange={handleChange} icon={Clock} readOnly />
-          <InputField label="Jam Selesai (Pekerjaan)" name="endTime" type="time" value={formData.endTime} onChange={handleChange} icon={Clock} readOnly={isLogbookCompleted || !hasCheckedIn} />
+        <div className="grid grid-cols-2 gap-4">
+          <InputField label="Tanggal" name="date" type="date" value={formData.date} readOnly icon={Calendar} />
+          <InputField label="Jam Absen Masuk" name="startTime" type="time" value={formData.startTime} readOnly icon={Clock} />
         </div>
 
-        <TaskInputSection
-          tasks={tasks}
-          currentTaskInput={currentTaskInput}
-          handleTaskInputChange={handleTaskInputChange}
-          autocompleteSuggestions={autocompleteSuggestions}
-          addTask={addTask}
-          removeTask={removeTask}
-        />
+        {/* ✅ Combo Box Section */}
+        <div className="space-y-4">
+          <label className="text-sm font-medium text-gray-700 block">Daftar Tugas/Pekerjaan Harian</label>
+          <div className="flex space-x-2">
+            <select
+              value={selectedTask}
+              onChange={(e) => setSelectedTask(e.target.value)}
+              className="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-800"
+            >
+              <option value="">-- Pilih tugas --</option>
+              {standardTasks.map((task, index) => (
+                <option key={index} value={task}>{task}</option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={addTask}
+              disabled={!selectedTask || (selectedTask === 'Lainnya' && !otherTask)}
+              className="p-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+            >
+              <Plus size={20} />
+            </button>
+          </div>
+
+          {/* Input untuk tugas lainnya */}
+          {selectedTask === 'Lainnya' && (
+            <input
+              type="text"
+              placeholder="Tulis tugas lainnya..."
+              value={otherTask}
+              onChange={(e) => setOtherTask(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-800"
+            />
+          )}
+
+          {/* List tugas yang sudah ditambahkan */}
+          {tasks.length > 0 && (
+            <div className="space-y-2 pt-2">
+              {tasks.map((task, index) => (
+                <div key={index} className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg shadow-sm">
+                  <span className="text-sm font-medium text-blue-800 truncate pr-2">{task}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeTask(index)}
+                    className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100 transition"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <TextareaField
           label="Keterangan Tambahan (Opsional)"
           name="description"
           value={formData.description}
-          onChange={handleChange}
+          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
         />
 
         {error && (
@@ -312,13 +334,13 @@ export default function LogbookPage() {
   );
 }
 
-// --- Helper components ---
+// --- Helper Components ---
 const InputField: React.FC<InputFieldProps> = ({ label, name, type = 'text', value, onChange, icon: Icon, readOnly = false }) => (
   <div className="space-y-1">
     <label className="text-sm font-medium text-gray-700">{label}</label>
     <div className={`flex items-center border ${readOnly ? 'border-gray-200 bg-gray-100' : 'border-gray-300 focus-within:ring-2 focus-within:ring-blue-500'} rounded-lg overflow-hidden transition`}>
       {Icon && <Icon size={20} className={`ml-3 ${readOnly ? 'text-gray-500' : 'text-blue-500'}`} />}
-      <input type={type} name={name} value={value} onChange={onChange} readOnly={readOnly} required={!readOnly} className={`w-full p-3 ${readOnly ? 'text-gray-600' : 'text-gray-800'} focus:outline-none bg-transparent`} />
+      <input type={type} name={name} value={value} onChange={onChange} readOnly={readOnly} className="w-full p-3 focus:outline-none bg-transparent text-gray-800" />
     </div>
   </div>
 );
@@ -327,40 +349,5 @@ const TextareaField: React.FC<TextareaFieldProps> = ({ label, name, value, onCha
   <div className="space-y-1">
     <label htmlFor={name} className="text-sm font-medium text-gray-700">{label}</label>
     <textarea id={name} name={name} value={value} onChange={onChange} rows={4} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition resize-none text-gray-800" placeholder="Jelaskan detail singkat terkait pekerjaan di atas..." />
-  </div>
-);
-
-const TaskInputSection: React.FC<TaskInputSectionProps> = ({ tasks, currentTaskInput, handleTaskInputChange, autocompleteSuggestions, addTask, removeTask }) => (
-  <div className="space-y-4">
-    <label className="text-sm font-medium text-gray-700 block">Daftar Tugas/Pekerjaan Harian</label>
-    <div className="relative">
-      <div className="flex space-x-2">
-        <input type="text" value={currentTaskInput} onChange={handleTaskInputChange} placeholder="Masukkan nama tugas..." className="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-800" />
-        <button type="button" onClick={() => addTask()} disabled={currentTaskInput.trim().length === 0} className="p-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center">
-          <Plus size={20} />
-        </button>
-      </div>
-
-      {autocompleteSuggestions.length > 0 && currentTaskInput.length > 2 && (
-        <ul className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg mt-1 max-h-48 overflow-y-auto shadow-lg">
-          {autocompleteSuggestions.map((task, index) => (
-            <li key={index} onClick={() => addTask(task)} className="p-3 cursor-pointer hover:bg-blue-50 text-gray-800">{task}</li>
-          ))}
-        </ul>
-      )}
-    </div>
-
-    {tasks.length > 0 && (
-      <div className="space-y-2 pt-2">
-        {tasks.map((task, index) => (
-          <div key={index} className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg shadow-sm">
-            <span className="text-sm font-medium text-blue-800 truncate pr-2">{task}</span>
-            <button type="button" onClick={() => removeTask(index)} className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100 transition">
-              <Trash2 size={18} />
-            </button>
-          </div>
-        ))}
-      </div>
-    )}
   </div>
 );

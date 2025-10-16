@@ -12,7 +12,7 @@ const OFFICE_LOCATION = {
   RADIUS_M: 500,
 }
 
-export default function CheckOutPage() {
+export default function CheckOutForm() {
   const router = useRouter()
   const [currentTime, setCurrentTime] = useState(new Date())
   const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null)
@@ -24,13 +24,13 @@ export default function CheckOutPage() {
   const [isFetchingLocation, setIsFetchingLocation] = useState(false)
   const [isFetchingLogbook, setIsFetchingLogbook] = useState(true)
 
-  // Realtime clock
+  // ⏰ Realtime clock
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000)
     return () => clearInterval(timer)
   }, [])
 
-  // Hitung jarak (Haversine)
+  // 📍 Hitung jarak (Haversine)
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const R = 6371e3
     const φ1 = lat1 * Math.PI / 180
@@ -43,7 +43,7 @@ export default function CheckOutPage() {
     return R * c
   }
 
-  // Ambil lokasi pengguna
+  // 🔍 Ambil lokasi pengguna
   const fetchLocation = () => {
     if (!navigator.geolocation) {
       setLocationStatus('Geolocation tidak didukung browser ini.')
@@ -74,8 +74,8 @@ export default function CheckOutPage() {
 
         setLocationStatus(
           dist <= OFFICE_LOCATION.RADIUS_M
-            ? 'Lokasi valid (dalam radius kantor)'
-            : 'Di luar radius kantor'
+            ? '✅ Lokasi valid (dalam radius kantor)'
+            : '⚠️ Di luar radius kantor'
         )
         setIsFetchingLocation(false)
       },
@@ -95,7 +95,7 @@ export default function CheckOutPage() {
     fetchLocation()
   }, [])
 
-  // Fetch logbook hari ini untuk menentukan tombol aktif
+  // 🗓️ Cek status logbook untuk mengaktifkan tombol checkout
   const fetchLogbookStatus = async () => {
     setIsFetchingLogbook(true)
     try {
@@ -103,18 +103,17 @@ export default function CheckOutPage() {
       if (!user) return
 
       const today = new Date().toISOString().split('T')[0]
-
       const { data: logbook, error } = await supabase
         .from('logbooks')
-        .select('*')
+        .select('start_time, end_time, status')
         .eq('user_id', user.id)
         .eq('log_date', today)
         .maybeSingle()
 
       if (error) throw error
 
-      // Tombol aktif jika sudah check-in dan status belum 'Pulang'
-      setCanCheckOut(!!logbook && !!logbook.start_time && logbook.status !== 'Pulang')
+      // ✅ Tombol aktif jika status logbook hari ini sudah COMPLETED dan belum absen pulang
+      setCanCheckOut(!!logbook && logbook.status === 'COMPLETED')
     } catch (err) {
       console.error(err)
       setCanCheckOut(false)
@@ -130,6 +129,7 @@ export default function CheckOutPage() {
   const formattedTime = currentTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
   const formattedDate = currentTime.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
+  // 🚪 Handle Absen Pulang
   const handleCheckOut = async () => {
     if (!location) return toast.error('Lokasi belum terdeteksi.')
 
@@ -157,7 +157,6 @@ export default function CheckOutPage() {
         .update({
           end_time: jamPulang,
           position_at_time: address,
-          description: 'Absen Pulang',
           status: 'Pulang'
         })
         .eq('user_id', user.id)
@@ -165,7 +164,8 @@ export default function CheckOutPage() {
 
       if (error) throw error
 
-      toast.success('Absen Pulang Berhasil!')
+      toast.success('✅ Absen Pulang Berhasil!')
+      localStorage.setItem('hasCheckedOut', 'true')
       router.replace('/dashboard')
     } catch (err: any) {
       console.error(err)
@@ -185,7 +185,7 @@ export default function CheckOutPage() {
       </header>
 
       <main className="p-6">
-        {/* Waktu */}
+        {/* 🕒 Waktu Saat Ini */}
         <div className="bg-white p-8 rounded-xl shadow-lg mb-8 text-center">
           <Clock size={48} className="text-gray-700 mx-auto mb-4" />
           <p className="text-lg font-semibold text-gray-700">Waktu Saat Ini</p>
@@ -193,7 +193,7 @@ export default function CheckOutPage() {
           <p className="text-md text-gray-500">{formattedDate}</p>
         </div>
 
-        {/* Lokasi */}
+        {/* 📍 Lokasi */}
         <div className="bg-white p-4 rounded-xl shadow-md border mb-5">
           <p className="font-semibold text-gray-700 mb-1">Status Lokasi:</p>
           <p className={`text-sm ${distance && distance <= OFFICE_LOCATION.RADIUS_M ? 'text-green-600' : 'text-red-600'}`}>
@@ -202,7 +202,9 @@ export default function CheckOutPage() {
 
           {distance !== null && <p className="mt-1 text-sm text-gray-600">Jarak dari kantor: <b>{distance.toFixed(1)} meter</b></p>}
           <p className="mt-2 text-sm text-gray-600"><b>Alamat Saat Ini:</b><br />{address}</p>
-          <p className="mt-2 text-xs text-gray-400">Koordinat: {location ? `${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}` : '...'}</p>
+          <p className="mt-2 text-xs text-gray-400">
+            Koordinat: {location ? `${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}` : '...'}
+          </p>
 
           <button
             onClick={fetchLocation}
@@ -213,20 +215,25 @@ export default function CheckOutPage() {
           </button>
         </div>
 
-        {/* Tombol Submit */}
+        {/* 🚪 Tombol Absen Pulang */}
         <button
           onClick={handleCheckOut}
           disabled={!canCheckOut || isSubmitting || !location || isFetchingLogbook}
           className={`w-full py-4 text-white font-extrabold rounded-xl transition duration-300 shadow-xl ${
-            isSubmitting ? 'bg-gray-400 cursor-not-allowed' : canCheckOut ? 'bg-blue-900 hover:bg-blue-800 shadow-blue-500/50' : 'bg-gray-400 cursor-not-allowed'
+            isSubmitting
+              ? 'bg-gray-400 cursor-not-allowed'
+              : canCheckOut
+              ? 'bg-blue-900 hover:bg-blue-800 shadow-blue-500/50'
+              : 'bg-gray-400 cursor-not-allowed'
           }`}
         >
           {isSubmitting ? 'Memproses...' : 'SUBMIT ABSEN PULANG'}
         </button>
 
+        {/* ℹ️ Catatan */}
         <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 text-center">
           <p className="font-semibold text-blue-900 mb-1">Catatan:</p>
-          <p>Absen akan dianggap valid jika dalam radius 500 meter dari kantor atau alamat terdeteksi di wilayah Lhokseumawe.</p>
+          <p>Absen Pulang hanya bisa dilakukan setelah logbook hari ini berstatus <b>COMPLETED</b> dan lokasi Anda berada dalam radius 500 meter dari kantor.</p>
         </div>
       </main>
     </div>

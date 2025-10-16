@@ -7,26 +7,29 @@ import toast, { Toaster } from 'react-hot-toast'
 
 export default function PengajuanCutiPage() {
   const router = useRouter()
-  const [mounted, setMounted] = useState(false) // client-only render
+  const [mounted, setMounted] = useState(false)
   const [leaveType, setLeaveType] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [reason, setReason] = useState('')
-  const [leaveBalance, setLeaveBalance] = useState<number | null>(12) // default cuti tahunan 12 hari
+  const [leaveBalance, setLeaveBalance] = useState<number | null>(12) // default
   const [loading, setLoading] = useState(false)
 
-  // 🔹 Hanya render di client
+  // 🔹 Pastikan hanya render di client
   useEffect(() => {
     setMounted(true)
   }, [])
 
-  // 🔹 Fetch sisa cuti dari Supabase
+  // 🔹 Ambil sisa cuti dari Supabase (profiles)
   useEffect(() => {
     if (!mounted) return
 
     const fetchProfile = async () => {
       try {
-        const { data: { user }, error: userError } = await supabase.auth.getUser()
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser()
         if (userError || !user) {
           router.push('/login')
           return
@@ -49,6 +52,7 @@ export default function PengajuanCutiPage() {
     fetchProfile()
   }, [mounted, router])
 
+  // 🔹 Handle submit pengajuan cuti
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -58,7 +62,9 @@ export default function PengajuanCutiPage() {
     }
 
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     if (!user) {
       toast.error('Anda belum login')
       setLoading(false)
@@ -67,62 +73,66 @@ export default function PengajuanCutiPage() {
 
     const start = new Date(startDate)
     const end = new Date(endDate)
-    const diffDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) + 1
+    const diffDays =
+      Math.ceil((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) + 1
 
-    // 🔹 Validasi sisa cuti tahunan
-    if (leaveType === 'Cuti Tahunan' && leaveBalance !== null && diffDays > leaveBalance) {
+    // 🔹 Validasi jika sisa cuti tahunan tidak mencukupi
+    if (
+      leaveType === 'Cuti Tahunan' &&
+      leaveBalance !== null &&
+      diffDays > leaveBalance
+    ) {
       toast.error('Sisa cuti tahunan tidak mencukupi')
       setLoading(false)
       return
     }
 
-    // 🔹 Insert pengajuan cuti
+    // 🔹 Insert pengajuan cuti ke tabel leave_requests
     const { error: insertError } = await supabase.from('leave_requests').insert({
       user_id: user.id,
       leave_type: leaveType,
       start_date: startDate,
       end_date: endDate,
       reason: reason,
-      status: 'Menunggu Persetujuan',
+      status: 'Menunggu Persetujuan', // belum disetujui
     })
 
     if (insertError) {
-      toast.error(`Gagal mengajukan cuti: ${insertError.message || 'Kesalahan tidak diketahui'}`)
+      toast.error(
+        `Gagal mengajukan cuti: ${insertError.message || 'Kesalahan tidak diketahui'}`
+      )
       setLoading(false)
       return
     }
 
-    // 🔹 Update sisa cuti jika tahunan
-    if (leaveType === 'Cuti Tahunan') {
-      const newBalance = (leaveBalance ?? 0) - diffDays
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ annual_leave_balance: newBalance })
-        .eq('id', user.id)
-      if (!updateError) setLeaveBalance(newBalance)
-    }
-
     toast.success('Pengajuan cuti berhasil dikirim!')
+
+    // 🔹 Reset form
     setLeaveType('')
     setStartDate('')
     setEndDate('')
     setReason('')
     setLoading(false)
 
+    // 🔹 Kembali ke dashboard setelah delay
     setTimeout(() => router.push('/dashboard'), 1200)
   }
 
-  if (!mounted) return null // SSR safe
+  if (!mounted) return null
 
   return (
     <div className="min-h-screen bg-white">
       <Toaster position="top-center" reverseOrder={false} />
 
+      {/* Header */}
       <div className="bg-[#1E3A8A] text-white text-xl font-bold p-4 rounded-b-lg flex items-center">
-        <button onClick={() => router.back()} className="mr-2 text-lg">←</button>
+        <button onClick={() => router.back()} className="mr-2 text-lg">
+          ←
+        </button>
         Pengajuan Cuti
       </div>
 
+      {/* Form */}
       <form onSubmit={handleSubmit} className="p-4 space-y-4">
         {/* Jenis Cuti */}
         <div>
@@ -135,9 +145,13 @@ export default function PengajuanCutiPage() {
             <option value="">Pilih Jenis Cuti</option>
             <option value="Cuti Tahunan">Cuti Tahunan</option>
             <option value="Cuti Sakit">Cuti Sakit</option>
-            <option value="Cuti Karena Alasan Penting">Cuti Karena Alasan Penting</option>
+            <option value="Cuti Karena Alasan Penting">
+              Cuti Karena Alasan Penting
+            </option>
             <option value="Cuti Melahirkan">Cuti Melahirkan</option>
-            <option value="Cuti di Luar Tanggungan Negara">Cuti di Luar Tanggungan Negara</option>
+            <option value="Cuti di Luar Tanggungan Negara">
+              Cuti di Luar Tanggungan Negara
+            </option>
           </select>
         </div>
 
@@ -182,6 +196,7 @@ export default function PengajuanCutiPage() {
           </div>
         )}
 
+        {/* Tombol Submit */}
         <button
           type="submit"
           disabled={loading}
@@ -192,7 +207,7 @@ export default function PengajuanCutiPage() {
 
         <p className="text-xs text-blue-800 bg-blue-50 p-3 rounded-lg">
           <b>Catatan:</b> Pengajuan cuti akan dikirim ke atasan untuk persetujuan.
-          Pastikan Anda mengajukan cuti minimal 3 hari sebelum tanggal yang diinginkan.
+          Sisa cuti akan berkurang setelah pengajuan disetujui.
         </p>
       </form>
     </div>

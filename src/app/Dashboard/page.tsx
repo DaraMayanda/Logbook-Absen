@@ -39,12 +39,14 @@ export default function DashboardPage() {
 
                 // --- Ambil logbook hari ini ---
                 const today = new Date().toISOString().substring(0, 10);
-                const { data: logbookData } = await supabase
+                const { data: logbookData, error } = await supabase
                     .from('logbooks')
-                    .select('start_time, end_time, activity_name, description')
+                    .select('start_time, end_time, activity_name, description, status')
                     .eq('user_id', user.id)
                     .eq('log_date', today)
                     .maybeSingle();
+
+                if (error) console.error('Error ambil logbook:', error);
 
                 if (logbookData) {
                     // Tentukan status absen
@@ -52,11 +54,8 @@ export default function DashboardPage() {
                     else if (logbookData.start_time) setAbsensiStatus('Masuk');
                     else setAbsensiStatus('Belum Absen');
 
-                    // Cek apakah logbook diisi
-                    const islogbookFilled = 
-                        (logbookData.activity_name && logbookData.activity_name.trim() !== '') ||
-                        (logbookData.description && logbookData.description.trim() !== '');
-                    setHasCompletedlogbook(islogbookFilled);
+                    // ✅ cek status logbook dari tabel
+                    setHasCompletedlogbook(logbookData.status === 'COMPLETED');
                 } else {
                     setAbsensiStatus('Belum Absen');
                     setHasCompletedlogbook(false);
@@ -72,6 +71,15 @@ export default function DashboardPage() {
         };
 
         fetchAndCheckStatus();
+
+        // 🔹 Deteksi flag dari localStorage (setelah absen pulang)
+        const checkedOut = localStorage.getItem('hasCheckedOut') === 'true';
+        if (checkedOut) {
+            setAbsensiStatus('Pulang');
+            localStorage.removeItem('hasCheckedOut');
+        }
+
+        // 🔁 Refresh saat tab difokuskan
         const handleFocus = () => fetchAndCheckStatus();
         window.addEventListener("focus", handleFocus);
         return () => window.removeEventListener("focus", handleFocus);
@@ -118,6 +126,7 @@ export default function DashboardPage() {
         );
     };
 
+    // ✅ Tombol pulang aktif hanya jika status = Masuk dan logbook COMPLETED
     const isPulangDisabled = absensiStatus !== 'Masuk' || !hasCompletedlogbook;
 
     // --- FeatureCard ---
@@ -140,6 +149,7 @@ export default function DashboardPage() {
         </a>
     );
 
+    // --- Loading screen ---
     if (isLoading || isLoggingOut) {
         return (
             <div className="flex min-h-screen items-center justify-center bg-gray-50">
@@ -153,6 +163,7 @@ export default function DashboardPage() {
         );
     }
 
+    // --- Tampilan utama ---
     return (
         <div className="min-h-screen bg-gray-50 font-sans">
             <header className="bg-blue-900 text-white p-6 pb-20 shadow-xl rounded-b-2xl">
@@ -177,6 +188,7 @@ export default function DashboardPage() {
             </header>
 
             <main className="px-5 -mt-10 pb-10">
+                {/* --- Status Absensi --- */}
                 <div className="bg-white p-5 rounded-xl shadow-2xl mb-6 border-b-4 border-blue-500">
                     <h2 className="text-sm font-medium text-gray-500 mb-3 uppercase tracking-wider">Status Absensi Hari Ini</h2>
                     <div className="flex items-center justify-between">
@@ -184,6 +196,7 @@ export default function DashboardPage() {
                     </div>
                 </div>
 
+                {/* --- Tombol Absen --- */}
                 <div className="grid grid-cols-2 gap-4 mb-8">
                     <button
                         onClick={handleAbsenMasuk}
@@ -205,7 +218,7 @@ export default function DashboardPage() {
                     </button>
                 </div>
 
-                {/* Alert Logbook */}
+                {/* --- Alert Logbook --- */}
                 {absensiStatus === 'Masuk' && (
                     <div className={`p-4 mb-8 rounded-xl shadow-sm border ${hasCompletedlogbook ? 'bg-green-50 border-green-300 text-green-800' : 'bg-yellow-50 border-yellow-300 text-yellow-800'}`}>
                         <p className="font-semibold text-center flex items-center justify-center">
@@ -217,11 +230,12 @@ export default function DashboardPage() {
                     </div>
                 )}
 
+                {/* --- Menu --- */}
                 <h2 className="text-lg font-bold text-gray-800 mb-4">Menu Aplikasi</h2>
                 <div className="space-y-4">
                     <FeatureCard
                         icon={FileText}
-                        title="logbook"
+                        title="Logbook"
                         description="Catat detail aktivitas harian Anda."
                         href="/logbook"
                     />
