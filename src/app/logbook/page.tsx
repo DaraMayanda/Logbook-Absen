@@ -59,7 +59,7 @@ export default function LogbookPage() {
   const [hasCheckedIn, setHasCheckedIn] = useState<boolean>(false);
 
   const [tasks, setTasks] = useState<string[]>([]);
-  const [standardTasks, setStandardTasks] = useState<string[]>([]);
+  const [standardTasks, setStandardTasks] = useState<string[]>([]); // dinamis berdasarkan position
   const [selectedTask, setSelectedTask] = useState<string>(''); 
   const [otherTask, setOtherTask] = useState<string>(''); 
 
@@ -110,18 +110,6 @@ export default function LogbookPage() {
     "Lainnya",
   ];
 
-  const tugasCS = [
-    "Membersihkan ruangan kerja, lantai, dan area umum kantor",
-    "Mengosongkan tempat sampah dan mengganti kantong plastik",
-    "Membersihkan toilet dan memastikan ketersediaan sabun serta tisu",
-    "Membersihkan kaca, meja, kursi, dan peralatan kantor lainnya",
-    "Mengepel dan menyapu lantai setiap pagi dan sore",
-    "Menyemprot disinfektan secara berkala",
-    "Menjaga kebersihan pantry dan area makan pegawai",
-    "Membantu menyiapkan ruangan rapat atau kegiatan kantor",
-    "Lainnya",
-  ];
-
   // --- Fetch user data & logbook ---
   useEffect(() => {
     const fetchUserData = async () => {
@@ -151,13 +139,10 @@ export default function LogbookPage() {
         });
 
         // 🔹 Tentukan daftar tugas berdasarkan posisi
-        const posisi = position.toLowerCase();
-        if (posisi.includes('satpam')) {
+        if (position.toLowerCase().includes('satpam')) {
           setStandardTasks(tugasSatpam);
-        } else if (posisi.includes('supir')) {
+        } else if (position.toLowerCase().includes('supir')) {
           setStandardTasks(tugasSupir);
-        } else if (posisi.includes('cleaning')) {
-          setStandardTasks(tugasCS);
         } else {
           setStandardTasks(tugasPPNPN);
         }
@@ -236,7 +221,7 @@ export default function LogbookPage() {
         .update({
           activity_name: activityNameString,
           description: formData.description || null,
-          position_at_time: userData.position,
+          position_at_time: userData.position, // ✅ simpan posisi user saat isi logbook
           status: 'COMPLETED',
         })
         .eq('id', logbookIdToUpdate);
@@ -264,7 +249,125 @@ export default function LogbookPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans p-4 sm:p-6">
-      {/* ...seluruh bagian render tetap sama persis... */}
+      <header className="flex items-center justify-between mb-6">
+        <button
+          onClick={() => router.back()}
+          className="flex items-center text-blue-700 hover:text-blue-900 transition font-medium"
+        >
+          <ChevronLeft size={20} className="mr-1" />
+          Kembali
+        </button>
+        <h1 className="text-2xl font-extrabold text-gray-800 flex items-center">
+          <FileText size={24} className="mr-2 text-blue-600" />
+          Logbook Harian
+        </h1>
+      </header>
+
+      <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl shadow-xl space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-b pb-4 mb-4">
+          <InputField label="Nama Pegawai" value={userData.fullName} icon={User} readOnly />
+          <InputField label="Jabatan" value={userData.position} icon={Briefcase} readOnly />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <InputField label="Tanggal" name="date" type="date" value={formData.date} readOnly icon={Calendar} />
+          <InputField label="Jam Absen Masuk" name="startTime" type="time" value={formData.startTime} readOnly icon={Clock} />
+        </div>
+
+        {/* ✅ Combo Box Section */}
+        <div className="space-y-4">
+          <label className="text-sm font-medium text-gray-700 block">Daftar Tugas/Pekerjaan Harian</label>
+          <div className="flex space-x-2">
+            <select
+              value={selectedTask}
+              onChange={(e) => setSelectedTask(e.target.value)}
+              className="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-800"
+            >
+              <option value="">-- Pilih tugas --</option>
+              {standardTasks.map((task, index) => (
+                <option key={index} value={task}>{task}</option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={addTask}
+              disabled={!selectedTask || (selectedTask === 'Lainnya' && !otherTask)}
+              className="p-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+            >
+              <Plus size={20} />
+            </button>
+          </div>
+
+          {selectedTask === 'Lainnya' && (
+            <input
+              type="text"
+              placeholder="Tulis tugas lainnya..."
+              value={otherTask}
+              onChange={(e) => setOtherTask(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-800"
+            />
+          )}
+
+          {tasks.length > 0 && (
+            <div className="space-y-2 pt-2">
+              {tasks.map((task, index) => (
+                <div key={index} className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg shadow-sm">
+                  <span className="text-sm font-medium text-blue-800 truncate pr-2">{task}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeTask(index)}
+                    className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100 transition"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <TextareaField
+          label="Keterangan Tambahan (Opsional)"
+          name="description"
+          value={formData.description}
+          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+        />
+
+        {error && (
+          <div className={`flex items-center p-3 rounded-lg ${isLogbookCompleted ? 'bg-yellow-100 border border-yellow-400 text-yellow-800' : 'bg-red-100 border border-red-400 text-red-700'}`}>
+            <AlertTriangle size={20} className="mr-2" />
+            <p className="text-sm font-medium">{error}</p>
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={isSubmitting || tasks.length === 0 || !hasCheckedIn || isLogbookCompleted}
+          className="w-full flex items-center justify-center space-x-2 bg-blue-600 text-white py-3 mt-8 rounded-xl shadow-lg hover:bg-blue-700 transition duration-300 font-bold text-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
+        >
+          {isSubmitting ? <RefreshCw size={20} className="animate-spin" /> : <Send size={20} />}
+          <span>{isSubmitting ? 'Menyimpan...' : 'Submit Logbook'}</span>
+        </button>
+      </form>
     </div>
   );
 }
+
+// --- Helper Components ---
+const InputField: React.FC<InputFieldProps> = ({ label, name, type = 'text', value, onChange, icon: Icon, readOnly = false }) => (
+  <div className="space-y-1">
+    <label className="text-sm font-medium text-gray-700">{label}</label>
+    <div className={`flex items-center border ${readOnly ? 'border-gray-200 bg-gray-100' : 'border-gray-300 focus-within:ring-2 focus-within:ring-blue-500'} rounded-lg overflow-hidden transition`}>
+      {Icon && <Icon size={20} className={`ml-3 ${readOnly ? 'text-gray-500' : 'text-blue-500'}`} />}
+      <input type={type} name={name} value={value} onChange={onChange} readOnly={readOnly} className="w-full p-3 focus:outline-none bg-transparent text-gray-800" />
+    </div>
+  </div>
+);
+
+const TextareaField: React.FC<TextareaFieldProps> = ({ label, name, value, onChange }) => (
+  <div className="space-y-1">
+    <label htmlFor={name} className="text-sm font-medium text-gray-700">{label}</label>
+    <textarea id={name} name={name} value={value} onChange={onChange} rows={4} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition resize-none text-gray-800" placeholder="Jelaskan detail singkat terkait pekerjaan di atas..." />
+  </div>
+);
