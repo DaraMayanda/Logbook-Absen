@@ -16,44 +16,56 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
   const router = useRouter()
 
+  // 🔹 LOGIN HANDLER
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError(null)
+    setMessage(null)
     setLoading(true)
 
     try {
       if (!email.trim() || !password) throw new Error('Email dan password wajib diisi.')
 
-      // ✳️ PANGGIL TANPA persistSession DI SINI
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       })
 
       if (signInError) throw signInError
+      if (!data?.session) throw new Error('Pastikan email sudah terverifikasi.')
 
-      // Jika data.session ada => sukses
-      if (!data?.session) {
-        // Terkadang session null jika verifikasi email dibutuhkan
-        throw new Error('Tidak mendapatkan session — pastikan email telah diverifikasi.')
-      }
-
-      // Simpan salinan di localStorage (opsional)
-      try {
-        localStorage.setItem('supabaseSession', JSON.stringify(data.session))
-      } catch (e) {
-        // ignore storage errors
-      }
-
-      // Redirect ke Dashboard
+      localStorage.setItem('supabaseSession', JSON.stringify(data.session))
       router.push('/dashboard')
     } catch (err: any) {
       console.error('Login error:', err)
       setError(err.message || 'Terjadi kesalahan saat login.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  // 🔹 RESET PASSWORD HANDLER
+  const handleForgotPassword = async () => {
+    setError(null)
+    setMessage(null)
+
+    if (!email.trim()) {
+      setError('Masukkan email terlebih dahulu untuk reset password.')
+      return
+    }
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: 'https://logbook-absen.vercel.app/reset-password', // ganti sesuai domain vercel kamu
+      })
+
+      if (error) throw error
+      setMessage('Link reset password telah dikirim ke email kamu.')
+    } catch (err: any) {
+      setError(err.message || 'Gagal mengirim link reset password.')
     }
   }
 
@@ -92,7 +104,9 @@ export default function LoginPage() {
               <label htmlFor="password" className="block text-sm font-medium text-gray-700">Password</label>
               <div className="relative mt-1">
                 <InputIcon>
-                  <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" /></svg>
+                  <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
+                  </svg>
                 </InputIcon>
                 <input id="password" name="password" type="password" required
                   className="block w-full rounded-lg border-gray-300 py-3 pl-10 pr-3 shadow-sm focus:border-[#4A90E2] focus:ring-[#4A90E2] sm:text-sm"
@@ -100,13 +114,28 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)} />
               </div>
+
+              {/* Forgot Password */}
+              <div className="text-right mt-2">
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  className="text-sm font-medium text-[#4A90E2] hover:text-[#003366]"
+                >
+                  Lupa password?
+                </button>
+              </div>
             </div>
 
             {error && <p className="text-sm text-red-600 text-center">{error}</p>}
+            {message && <p className="text-sm text-green-600 text-center">{message}</p>}
 
             <div>
-              <button type="submit" disabled={loading}
-                className="flex w-full justify-center rounded-full border border-transparent bg-[#003366] py-3 px-4 text-sm font-medium text-white shadow-sm hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-[#4A90E2] focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-gray-400">
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex w-full justify-center rounded-full border border-transparent bg-[#003366] py-3 px-4 text-sm font-medium text-white shadow-sm hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-[#4A90E2] focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-gray-400"
+              >
                 {loading ? 'Memproses...' : 'Login'}
               </button>
             </div>
@@ -114,7 +143,9 @@ export default function LoginPage() {
 
           <p className="text-center text-sm text-gray-600">
             Belum punya akun?{' '}
-            <Link href="/register" className="font-medium text-[#4A90E2] hover:text-[#003366]">Sign Up</Link>
+            <Link href="/register" className="font-medium text-[#4A90E2] hover:text-[#003366]">
+              Sign Up
+            </Link>
           </p>
         </div>
       </div>
