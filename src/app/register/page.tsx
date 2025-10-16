@@ -194,6 +194,7 @@ export default function RegisterPage() {
               >
                 <option value="PPNPN">PPNPN</option>
                 <option value="Supir">Supir</option>
+                <option value="Satpam">Satpam</option>
                 <option value="CS">CS</option>
               </select>
             </div>
