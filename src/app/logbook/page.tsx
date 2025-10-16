@@ -59,8 +59,9 @@ export default function LogbookPage() {
   const [hasCheckedIn, setHasCheckedIn] = useState<boolean>(false);
 
   const [tasks, setTasks] = useState<string[]>([]);
-  const [selectedTask, setSelectedTask] = useState<string>(''); // Combo box
-  const [otherTask, setOtherTask] = useState<string>(''); // Input "Lainnya"
+  const [standardTasks, setStandardTasks] = useState<string[]>([]); // dinamis berdasarkan position
+  const [selectedTask, setSelectedTask] = useState<string>(''); 
+  const [otherTask, setOtherTask] = useState<string>(''); 
 
   const [formData, setFormData] = useState<FormData>({
     date: today,
@@ -72,8 +73,8 @@ export default function LogbookPage() {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
 
-  // --- Daftar tugas tetap (PPNPN di KPPN)
-  const standardTasks: string[] = [
+  // --- Daftar tugas berdasarkan posisi ---
+  const tugasPPNPN = [
     "Pengarsipan dokumen SPM dan SP2D",
     "Input data SPM ke aplikasi SAKTI",
     "Distribusi surat dan dokumen internal",
@@ -87,7 +88,29 @@ export default function LogbookPage() {
     "Lainnya",
   ];
 
-  // --- Fetch user data & logbook
+  const tugasSatpam = [
+    "Menjaga keamanan gedung dan lingkungan kantor",
+    "Mencatat tamu yang masuk dan keluar",
+    "Mengontrol akses keluar-masuk kendaraan",
+    "Patroli area kantor secara berkala",
+    "Melaporkan kejadian mencurigakan",
+    "Mengawasi CCTV dan peralatan keamanan",
+    "Membantu saat kegiatan upacara atau rapat besar",
+    "Lainnya",
+  ];
+
+  const tugasSupir = [
+    "Mengantar dan menjemput pegawai sesuai jadwal",
+    "Merawat dan membersihkan kendaraan dinas",
+    "Memeriksa kondisi kendaraan sebelum digunakan",
+    "Mengisi logbook perjalanan kendaraan",
+    "Melaporkan kerusakan kendaraan ke atasan",
+    "Mengatur rute perjalanan agar efisien",
+    "Menjaga kebersihan dan kelengkapan dokumen kendaraan",
+    "Lainnya",
+  ];
+
+  // --- Fetch user data & logbook ---
   useEffect(() => {
     const fetchUserData = async () => {
       setIsLoading(true);
@@ -108,10 +131,21 @@ export default function LogbookPage() {
           .eq('id', user.id)
           .maybeSingle();
 
+        const position = profileData?.position || 'Staf Pelaksana';
+
         setUserData({
           fullName: profileData?.full_name || defaultFullNameFromEmail,
-          position: profileData?.position || 'Staf Pelaksana',
+          position: position,
         });
+
+        // 🔹 Tentukan daftar tugas berdasarkan posisi
+        if (position.toLowerCase().includes('satpam')) {
+          setStandardTasks(tugasSatpam);
+        } else if (position.toLowerCase().includes('supir')) {
+          setStandardTasks(tugasSupir);
+        } else {
+          setStandardTasks(tugasPPNPN);
+        }
 
         const { data: logbookData } = await supabase
           .from('logbooks')
@@ -180,31 +214,19 @@ export default function LogbookPage() {
     setIsSubmitting(true);
 
     try {
-      // 🔹 Gabungkan semua tugas jadi string (dipisah titik koma)
       const activityNameString = tasks.join('; ');
 
-      // 🔹 Update logbook: isi activity_name + description + status
       const { error: updateError } = await supabase
         .from('logbooks')
         .update({
           activity_name: activityNameString,
           description: formData.description || null,
+          position_at_time: userData.position, // ✅ simpan posisi user saat isi logbook
           status: 'COMPLETED',
         })
         .eq('id', logbookIdToUpdate);
 
       if (updateError) throw updateError;
-
-      // 🔹 (Opsional) hapus tasks lama agar tidak duplikat
-      await supabase.from('tasks').delete().eq('logbook_id', logbookIdToUpdate);
-
-      // 🔹 Simpan ulang semua task baru
-      const taskRows = tasks.map(task => ({
-        logbook_id: logbookIdToUpdate,
-        task_name: task,
-      }));
-      const { error: taskErr } = await supabase.from('tasks').insert(taskRows);
-      if (taskErr) throw taskErr;
 
       router.replace('/dashboard');
     } catch (err: any) {
@@ -277,7 +299,6 @@ export default function LogbookPage() {
             </button>
           </div>
 
-          {/* Input untuk tugas lainnya */}
           {selectedTask === 'Lainnya' && (
             <input
               type="text"
@@ -288,7 +309,6 @@ export default function LogbookPage() {
             />
           )}
 
-          {/* List tugas yang sudah ditambahkan */}
           {tasks.length > 0 && (
             <div className="space-y-2 pt-2">
               {tasks.map((task, index) => (
