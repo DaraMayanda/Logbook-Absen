@@ -60,8 +60,8 @@ export default function LogbookPage() {
 
   const [tasks, setTasks] = useState<string[]>([]);
   const [standardTasks, setStandardTasks] = useState<string[]>([]);
-  const [selectedTask, setSelectedTask] = useState<string>(''); 
-  const [otherTask, setOtherTask] = useState<string>(''); 
+  const [selectedTask, setSelectedTask] = useState<string>('');
+  const [otherTask, setOtherTask] = useState<string>('');
 
   const [formData, setFormData] = useState<FormData>({
     date: today,
@@ -161,7 +161,7 @@ export default function LogbookPage() {
           setHasCheckedIn(true);
           setLogbookIdToUpdate(logbookData.id);
 
-          // 🔹 Ambil jam masuk dari start_time tabel logbooks
+          // Ambil jam masuk
           const startTimeValue = logbookData.start_time
             ? new Date(logbookData.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             : '08:00';
@@ -222,7 +222,6 @@ export default function LogbookPage() {
     try {
       const activityNameString = tasks.join('; ');
 
-      // 🔹 Update logbook utama
       const { error: updateError } = await supabase
         .from('logbooks')
         .update({
@@ -235,7 +234,7 @@ export default function LogbookPage() {
 
       if (updateError) throw updateError;
 
-      // 🔹 Simpan setiap task ke tabel "tasks"
+      // Simpan task
       for (const task of tasks) {
         const { error: taskError } = await supabase
           .from('tasks')
@@ -293,11 +292,11 @@ export default function LogbookPage() {
         {/* Daftar Tugas */}
         <div className="space-y-4">
           <label className="text-sm font-medium text-gray-700 block">Daftar Tugas/Pekerjaan Harian</label>
-          <div className="flex space-x-2">
+          <div className="flex items-center">
             <select
               value={selectedTask}
               onChange={(e) => setSelectedTask(e.target.value)}
-              className="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-800"
+              className="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-800"
             >
               <option value="">-- Pilih tugas --</option>
               {standardTasks.map((task, index) => (
@@ -309,9 +308,9 @@ export default function LogbookPage() {
               type="button"
               onClick={addTask}
               disabled={!selectedTask || (selectedTask === 'Lainnya' && !otherTask)}
-              className="p-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+              className="ml-2 flex items-center justify-center w-10 h-10 bg-blue-500 text-white rounded-xl hover:bg-blue-600 active:scale-95 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
-              <Plus size={20} />
+              <Plus size={18} />
             </button>
           </div>
 
@@ -321,7 +320,7 @@ export default function LogbookPage() {
               placeholder="Tulis tugas lainnya..."
               value={otherTask}
               onChange={(e) => setOtherTask(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-800"
+              className="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 text-gray-800"
             />
           )}
 
@@ -360,7 +359,7 @@ export default function LogbookPage() {
         <button
           type="submit"
           disabled={isSubmitting || tasks.length === 0 || !hasCheckedIn || isLogbookCompleted}
-          className="w-full flex items-center justify-center space-x-2 bg-blue-600 text-white py-3 mt-8 rounded-xl shadow-lg hover:bg-blue-700 transition duration-300 font-bold text-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
+          className="w-full flex items-center justify-center space-x-2 bg-blue-600 text-white py-3 mt-8 rounded-xl shadow-lg hover:bg-blue-700 active:scale-95 transition duration-300 font-bold text-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
           {isSubmitting ? <RefreshCw size={20} className="animate-spin" /> : <Send size={20} />}
           <span>{isSubmitting ? 'Menyimpan...' : 'Submit Logbook'}</span>
@@ -376,7 +375,14 @@ const InputField: React.FC<InputFieldProps> = ({ label, name, type = 'text', val
     <label className="text-sm font-medium text-gray-700">{label}</label>
     <div className={`flex items-center border ${readOnly ? 'border-gray-200 bg-gray-100' : 'border-gray-300 focus-within:ring-2 focus-within:ring-blue-500'} rounded-lg overflow-hidden transition`}>
       {Icon && <Icon size={20} className={`ml-3 ${readOnly ? 'text-gray-500' : 'text-blue-500'}`} />}
-      <input type={type} name={name} value={value} onChange={onChange} readOnly={readOnly} className="w-full p-3 focus:outline-none bg-transparent text-gray-800" />
+      <input
+        type={type}
+        name={name}
+        value={value}
+        onChange={onChange}
+        readOnly={readOnly}
+        className="w-full p-3 focus:outline-none bg-transparent text-gray-800"
+      />
     </div>
   </div>
 );
@@ -384,6 +390,14 @@ const InputField: React.FC<InputFieldProps> = ({ label, name, type = 'text', val
 const TextareaField: React.FC<TextareaFieldProps> = ({ label, name, value, onChange }) => (
   <div className="space-y-1">
     <label htmlFor={name} className="text-sm font-medium text-gray-700">{label}</label>
-    <textarea id={name} name={name} value={value} onChange={onChange} rows={4} className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition resize-none text-gray-800" placeholder="Jelaskan detail singkat terkait pekerjaan di atas..." />
+    <textarea
+      id={name}
+      name={name}
+      value={value}
+      onChange={onChange}
+      rows={4}
+      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition resize-none text-gray-800"
+      placeholder="Jelaskan detail singkat terkait pekerjaan di atas..."
+    />
   </div>
 );
