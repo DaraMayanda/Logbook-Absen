@@ -59,13 +59,13 @@ export default function LogbookPage() {
   const [hasCheckedIn, setHasCheckedIn] = useState<boolean>(false);
 
   const [tasks, setTasks] = useState<string[]>([]);
-  const [standardTasks, setStandardTasks] = useState<string[]>([]); // dinamis berdasarkan position
+  const [standardTasks, setStandardTasks] = useState<string[]>([]);
   const [selectedTask, setSelectedTask] = useState<string>(''); 
   const [otherTask, setOtherTask] = useState<string>(''); 
 
   const [formData, setFormData] = useState<FormData>({
     date: today,
-    startTime: '08:00',
+    startTime: '',
     description: '',
   });
 
@@ -132,13 +132,12 @@ export default function LogbookPage() {
           .maybeSingle();
 
         const position = profileData?.position || 'Staf Pelaksana';
-
         setUserData({
           fullName: profileData?.full_name || defaultFullNameFromEmail,
           position: position,
         });
 
-        // 🔹 Tentukan daftar tugas berdasarkan posisi
+        // Pilih daftar tugas sesuai jabatan
         if (position.toLowerCase().includes('satpam')) {
           setStandardTasks(tugasSatpam);
         } else if (position.toLowerCase().includes('supir')) {
@@ -147,6 +146,7 @@ export default function LogbookPage() {
           setStandardTasks(tugasPPNPN);
         }
 
+        // Cek logbook hari ini
         const { data: logbookData } = await supabase
           .from('logbooks')
           .select('id, start_time, status')
@@ -160,7 +160,13 @@ export default function LogbookPage() {
         } else {
           setHasCheckedIn(true);
           setLogbookIdToUpdate(logbookData.id);
-          setFormData(prev => ({ ...prev, startTime: logbookData.start_time?.substring(0, 5) || '08:00' }));
+
+          // 🔹 Ambil jam masuk dari start_time tabel logbooks
+          const startTimeValue = logbookData.start_time
+            ? new Date(logbookData.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : '08:00';
+
+          setFormData(prev => ({ ...prev, startTime: startTimeValue }));
 
           if (logbookData.status === 'COMPLETED') {
             setIsLogbookCompleted(true);
@@ -216,17 +222,26 @@ export default function LogbookPage() {
     try {
       const activityNameString = tasks.join('; ');
 
+      // 🔹 Update logbook utama
       const { error: updateError } = await supabase
         .from('logbooks')
         .update({
           activity_name: activityNameString,
           description: formData.description || null,
-          position_at_time: userData.position, // ✅ simpan posisi user saat isi logbook
+          position_at_time: userData.position,
           status: 'COMPLETED',
         })
         .eq('id', logbookIdToUpdate);
 
       if (updateError) throw updateError;
+
+      // 🔹 Simpan setiap task ke tabel "tasks"
+      for (const task of tasks) {
+        const { error: taskError } = await supabase
+          .from('tasks')
+          .insert([{ logbook_id: logbookIdToUpdate, task_name: task }]);
+        if (taskError) console.error('Gagal menyimpan task:', taskError);
+      }
 
       router.replace('/dashboard');
     } catch (err: any) {
@@ -264,6 +279,7 @@ export default function LogbookPage() {
       </header>
 
       <form onSubmit={handleSubmit} className="bg-white p-6 rounded-2xl shadow-xl space-y-6">
+        {/* Data Pegawai */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-b pb-4 mb-4">
           <InputField label="Nama Pegawai" value={userData.fullName} icon={User} readOnly />
           <InputField label="Jabatan" value={userData.position} icon={Briefcase} readOnly />
@@ -274,7 +290,7 @@ export default function LogbookPage() {
           <InputField label="Jam Absen Masuk" name="startTime" type="time" value={formData.startTime} readOnly icon={Clock} />
         </div>
 
-        {/* ✅ Combo Box Section */}
+        {/* Daftar Tugas */}
         <div className="space-y-4">
           <label className="text-sm font-medium text-gray-700 block">Daftar Tugas/Pekerjaan Harian</label>
           <div className="flex space-x-2">

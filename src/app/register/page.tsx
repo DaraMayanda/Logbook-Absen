@@ -3,7 +3,8 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
-import React from 'react' // Ensure React is imported for type consistency
+import { useRouter } from 'next/navigation'
+import React from 'react'
 
 const InputIcon = ({ children }: { children: React.ReactNode }) => (
   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
@@ -12,13 +13,45 @@ const InputIcon = ({ children }: { children: React.ReactNode }) => (
 )
 
 export default function RegisterPage() {
+  const router = useRouter()
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [position, setPosition] = useState('PPNPN')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  // 💪 Status kekuatan password
+  const [passwordStrength, setPasswordStrength] = useState<'Weak' | 'Medium' | 'Strong' | null>(null)
+
+  // Fungsi validasi password kuat
+  const validatePassword = (pass: string) => {
+    const minLength = /.{8,}/
+    const hasUppercase = /[A-Z]/
+    const hasNumber = /[0-9]/
+    const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/
+    if (!minLength.test(pass)) return 'Password minimal 8 karakter.'
+    if (!hasUppercase.test(pass)) return 'Password harus mengandung huruf besar.'
+    if (!hasNumber.test(pass)) return 'Password harus mengandung angka.'
+    if (!hasSpecial.test(pass)) return 'Password harus mengandung karakter spesial.'
+    return null
+  }
+
+  // 🧠 Logika penilaian kekuatan password
+  const evaluateStrength = (pass: string) => {
+    let score = 0
+    if (/.{8,}/.test(pass)) score++
+    if (/[A-Z]/.test(pass)) score++
+    if (/[0-9]/.test(pass)) score++
+    if (/[!@#$%^&*(),.?":{}|<>]/.test(pass)) score++
+
+    if (score <= 1) setPasswordStrength('Weak')
+    else if (score === 2 || score === 3) setPasswordStrength('Medium')
+    else if (score === 4) setPasswordStrength('Strong')
+    else setPasswordStrength(null)
+  }
 
   const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -27,21 +60,18 @@ export default function RegisterPage() {
     setLoading(true)
 
     try {
-      // --- VALIDASI CLIENT SIDE ---
-      if (!fullName.trim() || !email.trim() || !password || !position.trim()) {
+      if (!fullName.trim() || !email.trim() || !password || !confirmPassword || !position.trim()) {
         throw new Error('Semua field harus diisi.')
       }
 
-      if (password.length < 6) {
-        throw new Error('Password minimal 6 karakter.')
-      }
-
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      if (!emailRegex.test(email)) {
-        throw new Error('Format email tidak valid.')
-      }
+      if (!emailRegex.test(email)) throw new Error('Format email tidak valid.')
 
-      // 1️⃣ Register ke Supabase Auth
+      const passwordError = validatePassword(password)
+      if (passwordError) throw new Error(passwordError)
+
+      if (password !== confirmPassword) throw new Error('Konfirmasi password tidak sama.')
+
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -51,37 +81,29 @@ export default function RegisterPage() {
             role: 'pegawai',
             position
           },
-          // URL ini adalah URL yang akan dibuka setelah pengguna mengklik link di email.
-          emailRedirectTo: `${window.location.origin}/login` 
+          emailRedirectTo: `${window.location.origin}/login`
         }
       })
-      
-      // Jika Supabase mengembalikan error (misalnya, email sudah ada atau password lemah)
-      if (signUpError) {
-        throw signUpError
-      }
 
-      // 2️⃣ Tampilkan pesan sukses dan reset form
-      // Pengecekan `data.user` dapat memastikan proses berhasil.
-      if (data.user || data.session === null) { 
+      if (signUpError) throw signUpError
+
+      if (data.user || data.session === null) {
         setSuccess('✅ Registrasi berhasil! Cek email Anda untuk verifikasi dan login.')
         setFullName('')
         setEmail('')
         setPassword('')
+        setConfirmPassword('')
         setPosition('PPNPN')
+        setPasswordStrength(null)
+        setTimeout(() => router.push('/login'), 3000)
       } else {
-         // Case fallback, misal email sudah terdaftar tapi bukan error
-         setSuccess('Registrasi berhasil. Silakan cek email Anda untuk verifikasi. Akun mungkin sudah terdaftar.')
+        setSuccess('Registrasi berhasil. Silakan cek email Anda untuk verifikasi.')
       }
-
-      // CATATAN PENTING: Pembuatan profil di tabel 'profiles' ditangani oleh Database Trigger.
-
     } catch (err: any) {
-      // Penanganan Error yang lebih robust
-      console.error('Error register:', JSON.stringify(err, null, 2))
+      console.error('Error register:', err)
       setError(
-        err.message || 
-        'Terjadi kesalahan saat registrasi. Pastikan email belum terdaftar dan password minimal 6 karakter.'
+        err.message ||
+          'Terjadi kesalahan saat registrasi. Pastikan email belum terdaftar dan password memenuhi kriteria keamanan.'
       )
     } finally {
       setLoading(false)
@@ -101,12 +123,7 @@ export default function RegisterPage() {
       {/* Form */}
       <div className="-mt-16 w-full max-w-md self-center">
         <div className="space-y-8 rounded-lg bg-white p-8 shadow-lg">
-          {/* FIX: suppressHydrationWarning ditambahkan di sini untuk mengabaikan atribut yang disuntikkan ekstensi browser */}
-          <form 
-            className="space-y-6" 
-            onSubmit={handleRegister} 
-            suppressHydrationWarning={true}
-          >
+          <form className="space-y-6" onSubmit={handleRegister} suppressHydrationWarning={true}>
             {/* Nama Lengkap */}
             <div>
               <label htmlFor="fullName" className="block text-sm font-medium text-gray-700">
@@ -115,7 +132,11 @@ export default function RegisterPage() {
               <div className="relative mt-1">
                 <InputIcon>
                   <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                    <path
+                      fillRule="evenodd"
+                      d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
+                      clipRule="evenodd"
+                    />
                   </svg>
                 </InputIcon>
                 <input
@@ -174,11 +195,51 @@ export default function RegisterPage() {
                   type="password"
                   required
                   className="block w-full rounded-lg border-gray-300 py-3 pl-10 pr-3 shadow-sm focus:border-[#4A90E2] focus:ring-[#4A90E2] sm:text-sm"
-                  placeholder="Minimal 6 karakter"
+                  placeholder="Minimal 8 karakter (A-Z, angka, simbol)"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value)
+                    evaluateStrength(e.target.value)
+                  }}
                 />
               </div>
+
+              {/* 💪 Indikator kekuatan password */}
+              {password && (
+                <div className="mt-2 text-sm font-medium">
+                  <span
+                    className={`${
+                      passwordStrength === 'Weak'
+                        ? 'text-red-600'
+                        : passwordStrength === 'Medium'
+                        ? 'text-yellow-500'
+                        : 'text-green-600'
+                    }`}
+                  >
+                    💪 Kekuatan Password: {passwordStrength}
+                  </span>
+                </div>
+              )}
+
+              <p className="mt-1 text-xs text-gray-500">
+                • Minimal 8 karakter • Huruf besar • Angka • Simbol
+              </p>
+            </div>
+
+            {/* Konfirmasi Password */}
+            <div>
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
+                Konfirmasi Password
+              </label>
+              <input
+                id="confirmPassword"
+                type="password"
+                required
+                className="mt-1 block w-full rounded-lg border-gray-300 py-3 px-3 shadow-sm focus:border-[#4A90E2] focus:ring-[#4A90E2] sm:text-sm"
+                placeholder="Ulangi password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
             </div>
 
             {/* Jenis Pengguna */}
@@ -198,9 +259,11 @@ export default function RegisterPage() {
               </select>
             </div>
 
+            {/* Pesan Error / Success */}
             {error && <p className="text-sm text-red-600">{error}</p>}
             {success && <p className="text-sm text-green-600">{success}</p>}
 
+            {/* Tombol Submit */}
             <div>
               <button
                 type="submit"
@@ -212,6 +275,7 @@ export default function RegisterPage() {
             </div>
           </form>
 
+          {/* Link Login */}
           <p className="text-center text-sm text-gray-600">
             Sudah punya akun?{' '}
             <Link href="/login" className="font-medium text-[#4A90E2] hover:text-[#003366]">

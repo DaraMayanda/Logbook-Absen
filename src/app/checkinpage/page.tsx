@@ -12,7 +12,7 @@ const OFFICE_LOCATION = {
   RADIUS_M: 500,
 }
 
-export default function checkinpage() {
+export default function CheckInPage() {
   const router = useRouter()
   const [currentTime, setCurrentTime] = useState(new Date())
   const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null)
@@ -21,7 +21,7 @@ export default function checkinpage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [locationStatus, setLocationStatus] = useState<string>('Mencari lokasi...')
 
-  // Update waktu real-time
+  // Waktu realtime
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000)
     return () => clearInterval(timer)
@@ -33,6 +33,7 @@ export default function checkinpage() {
       setLocationStatus('Geolocation tidak didukung browser ini.')
       return
     }
+
     setLocationStatus('Mengambil lokasi...')
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
@@ -40,11 +41,12 @@ export default function checkinpage() {
         const lon = pos.coords.longitude
         setLocation({ lat, lon })
 
+        // hitung jarak
         const R = 6371e3
-        const φ1 = OFFICE_LOCATION.latitude * Math.PI / 180
-        const φ2 = lat * Math.PI / 180
-        const Δφ = (lat - OFFICE_LOCATION.latitude) * Math.PI / 180
-        const Δλ = (lon - OFFICE_LOCATION.longitude) * Math.PI / 180
+        const φ1 = (OFFICE_LOCATION.latitude * Math.PI) / 180
+        const φ2 = (lat * Math.PI) / 180
+        const Δφ = ((lat - OFFICE_LOCATION.latitude) * Math.PI) / 180
+        const Δλ = ((lon - OFFICE_LOCATION.longitude) * Math.PI) / 180
         const a =
           Math.sin(Δφ / 2) ** 2 +
           Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2
@@ -52,7 +54,6 @@ export default function checkinpage() {
         const dist = R * c
         setDistance(dist)
 
-        // Ambil alamat dari Nominatim
         try {
           const res = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`
@@ -63,11 +64,11 @@ export default function checkinpage() {
           setAddress('Gagal mendapatkan alamat')
         }
 
-        // Status lokasi
+        // status lokasi
         if (dist <= OFFICE_LOCATION.RADIUS_M) {
-          setLocationStatus('Lokasi valid (dalam radius kantor)')
+          setLocationStatus('✅ Lokasi valid (dalam radius kantor)')
         } else {
-          setLocationStatus('Di luar radius kantor')
+          setLocationStatus('🚫 Di luar radius kantor')
         }
       },
       (error) => {
@@ -82,20 +83,31 @@ export default function checkinpage() {
     fetchLocation()
   }, [])
 
-  const formattedTime = currentTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-  const formattedDate = currentTime.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const formattedTime = currentTime.toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+  const formattedDate = currentTime.toLocaleDateString('id-ID', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+
+  const isOutOfRadius = distance !== null && distance > OFFICE_LOCATION.RADIUS_M
 
   const handleCheckIn = async () => {
     if (!location) {
       toast.error('Lokasi belum terdeteksi.')
       return
     }
+
     const isValidLocation =
-      (distance && distance <= OFFICE_LOCATION.RADIUS_M) ||
+      (distance !== null && distance <= OFFICE_LOCATION.RADIUS_M) ||
       (address && address.toLowerCase().includes('lhokseumawe'))
 
     if (!isValidLocation) {
-      toast.error('Lokasi di luar area kantor.')
+      toast.error('❌ Radius Anda di luar area kantor.')
       return
     }
 
@@ -113,19 +125,17 @@ export default function checkinpage() {
       const batasJamMasuk = '08:00:00'
       const status = jamMasuk > batasJamMasuk ? 'Terlambat' : 'Hadir'
 
-      // ✅ Logbook dibuat tapi activity_name/description kosong
       const { error } = await supabase.from('logbooks').insert({
         user_id: user.id,
         log_date: now.toISOString().split('T')[0],
         start_time: jamMasuk,
         position_at_time: address,
-        description: '', // kosong supaya Dashboard alert “Segera isi logbook”
+        description: '',
         status,
       })
 
       if (error) throw error
-      toast.success(`Absen berhasil (${status})`)
-
+      toast.success(`✅ Absen berhasil (${status})`)
       router.replace('/dashboard')
     } catch (err) {
       console.error(err)
@@ -138,7 +148,9 @@ export default function checkinpage() {
   return (
     <div className="min-h-screen bg-gray-50 font-sans">
       <header className="bg-blue-900 text-white p-4 shadow-lg flex items-center">
-        <button onClick={() => router.back()} className="p-1 mr-4 text-white hover:text-gray-300 transition"><ArrowLeft size={24} /></button>
+        <button onClick={() => router.back()} className="p-1 mr-4 text-white hover:text-gray-300 transition">
+          <ArrowLeft size={24} />
+        </button>
         <h1 className="text-xl font-bold">Absen Masuk</h1>
       </header>
 
@@ -154,31 +166,63 @@ export default function checkinpage() {
         {/* Lokasi */}
         <div className="bg-white p-4 rounded-xl shadow-md border mb-5">
           <p className="font-semibold text-gray-700 mb-1">Status Lokasi:</p>
-          <p className={`text-sm ${distance && distance <= OFFICE_LOCATION.RADIUS_M ? 'text-green-600' : 'text-red-600'}`}>
+          <p className={`text-sm ${isOutOfRadius ? 'text-red-600' : 'text-green-600'}`}>
             {locationStatus}
           </p>
-          {distance !== null && <p className="mt-1 text-sm text-gray-600">Jarak dari kantor: <b>{distance.toFixed(1)} meter</b></p>}
-          <p className="mt-2 text-sm text-gray-600"><b>Alamat Saat Ini:</b><br />{address}</p>
-          <p className="mt-2 text-xs text-gray-400">Koordinat: {location ? `${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}` : '...'}</p>
+          {distance !== null && (
+            <p className="mt-1 text-sm text-gray-600">
+              Jarak dari kantor: <b>{distance.toFixed(1)} meter</b>
+            </p>
+          )}
+          <p className="mt-2 text-sm text-gray-600">
+            <b>Alamat Saat Ini:</b>
+            <br />
+            {address}
+          </p>
+          <p className="mt-2 text-xs text-gray-400">
+            Koordinat: {location ? `${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}` : '...'}
+          </p>
 
-          <button onClick={fetchLocation} className="mt-3 bg-blue-900 hover:bg-blue-800 text-white text-sm font-semibold py-2 px-3 rounded-lg">
+          <button
+            onClick={fetchLocation}
+            className="mt-3 bg-blue-900 hover:bg-blue-800 text-white text-sm font-semibold py-2 px-3 rounded-lg"
+          >
             Ambil Ulang Lokasi
           </button>
         </div>
 
+        {/* Tombol Submit */}
         <button
           onClick={handleCheckIn}
-          disabled={isSubmitting}
+          disabled={isSubmitting || isOutOfRadius}
           className={`w-full py-4 text-white font-extrabold rounded-xl transition duration-300 shadow-xl ${
-            isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-900 hover:bg-blue-800 shadow-blue-500/50'
+            isOutOfRadius
+              ? 'bg-gray-400 cursor-not-allowed'
+              : isSubmitting
+              ? 'bg-gray-400 cursor-wait'
+              : 'bg-blue-900 hover:bg-blue-800 shadow-blue-500/50'
           }`}
         >
-          {isSubmitting ? 'Memproses...' : 'SUBMIT ABSEN MASUK'}
+          {isSubmitting
+            ? 'Memproses...'
+            : isOutOfRadius
+            ? 'Anda di luar radius kantor'
+            : 'SUBMIT ABSEN MASUK'}
         </button>
+
+        {/* Peringatan tampil hanya di bawah tombol */}
+        {isOutOfRadius && (
+          <p className="mt-3 text-sm text-red-600 font-semibold text-center">
+            🚫 Anda berada di luar radius kantor (lebih dari {OFFICE_LOCATION.RADIUS_M} meter).
+          </p>
+        )}
 
         <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 text-center">
           <p className="font-semibold text-blue-900 mb-1">Catatan:</p>
-          <p>Absen akan dianggap valid jika dalam radius 500 meter dari kantor.</p>
+          <p>
+            Absen akan dianggap valid jika dalam radius{' '}
+            {OFFICE_LOCATION.RADIUS_M} meter dari kantor.
+          </p>
         </div>
       </main>
     </div>

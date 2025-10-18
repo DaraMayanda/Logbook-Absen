@@ -24,7 +24,7 @@ export default function CheckOutForm() {
   const [isFetchingLocation, setIsFetchingLocation] = useState(false)
   const [isFetchingLogbook, setIsFetchingLogbook] = useState(true)
 
-  // ⏰ Realtime clock
+  // 🕒 Realtime clock
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000)
     return () => clearInterval(timer)
@@ -37,8 +37,9 @@ export default function CheckOutForm() {
     const φ2 = lat2 * Math.PI / 180
     const Δφ = (lat2 - lat1) * Math.PI / 180
     const Δλ = (lon2 - lon1) * Math.PI / 180
-    const a = Math.sin(Δφ / 2) ** 2 +
-              Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2
+    const a =
+      Math.sin(Δφ / 2) ** 2 +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
     return R * c
   }
@@ -75,8 +76,9 @@ export default function CheckOutForm() {
         setLocationStatus(
           dist <= OFFICE_LOCATION.RADIUS_M
             ? '✅ Lokasi valid (dalam radius kantor)'
-            : '⚠️ Di luar radius kantor'
+            : '🚫 Di luar radius kantor'
         )
+
         setIsFetchingLocation(false)
       },
       (error) => {
@@ -126,18 +128,34 @@ export default function CheckOutForm() {
     fetchLogbookStatus()
   }, [])
 
-  const formattedTime = currentTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-  const formattedDate = currentTime.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const formattedTime = currentTime.toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+  const formattedDate = currentTime.toLocaleDateString('id-ID', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+
+  const isOutOfRadius = distance !== null && distance > OFFICE_LOCATION.RADIUS_M
 
   // 🚪 Handle Absen Pulang
   const handleCheckOut = async () => {
-    if (!location) return toast.error('Lokasi belum terdeteksi.')
+    if (!location) {
+      toast.error('Lokasi belum terdeteksi.')
+      return
+    }
 
     const isValidLocation =
-      (distance && distance <= OFFICE_LOCATION.RADIUS_M) ||
+      (distance !== null && distance <= OFFICE_LOCATION.RADIUS_M) ||
       (address && address.toLowerCase().includes('lhokseumawe'))
 
-    if (!isValidLocation) return toast.error('Lokasi di luar area kantor.')
+    if (!isValidLocation) {
+      toast.error('❌ Radius Anda di luar area kantor.')
+      return
+    }
 
     setIsSubmitting(true)
     try {
@@ -157,7 +175,7 @@ export default function CheckOutForm() {
         .update({
           end_time: jamPulang,
           position_at_time: address,
-          status: 'Pulang'
+          status: 'Pulang',
         })
         .eq('user_id', user.id)
         .eq('log_date', tanggalHariIni)
@@ -178,7 +196,10 @@ export default function CheckOutForm() {
   return (
     <div className="min-h-screen bg-gray-50 font-sans">
       <header className="bg-blue-900 text-white p-4 shadow-lg flex items-center">
-        <button onClick={() => router.back()} className="p-1 mr-4 text-white hover:text-gray-300 transition">
+        <button
+          onClick={() => router.back()}
+          className="p-1 mr-4 text-white hover:text-gray-300 transition"
+        >
           <ArrowLeft size={24} />
         </button>
         <h1 className="text-xl font-bold">Absen Pulang</h1>
@@ -189,21 +210,38 @@ export default function CheckOutForm() {
         <div className="bg-white p-8 rounded-xl shadow-lg mb-8 text-center">
           <Clock size={48} className="text-gray-700 mx-auto mb-4" />
           <p className="text-lg font-semibold text-gray-700">Waktu Saat Ini</p>
-          <h2 className="text-5xl font-extrabold text-gray-900 mb-1">{formattedTime}</h2>
+          <h2 className="text-5xl font-extrabold text-gray-900 mb-1">
+            {formattedTime}
+          </h2>
           <p className="text-md text-gray-500">{formattedDate}</p>
         </div>
 
         {/* 📍 Lokasi */}
         <div className="bg-white p-4 rounded-xl shadow-md border mb-5">
           <p className="font-semibold text-gray-700 mb-1">Status Lokasi:</p>
-          <p className={`text-sm ${distance && distance <= OFFICE_LOCATION.RADIUS_M ? 'text-green-600' : 'text-red-600'}`}>
-            {locationStatus} {isFetchingLocation && '(Memuat...)'}
+          <p
+            className={`text-sm ${
+              isOutOfRadius ? 'text-red-600' : 'text-green-600'
+            }`}
+          >
+            {locationStatus}
           </p>
 
-          {distance !== null && <p className="mt-1 text-sm text-gray-600">Jarak dari kantor: <b>{distance.toFixed(1)} meter</b></p>}
-          <p className="mt-2 text-sm text-gray-600"><b>Alamat Saat Ini:</b><br />{address}</p>
+          {distance !== null && (
+            <p className="mt-1 text-sm text-gray-600">
+              Jarak dari kantor: <b>{distance.toFixed(1)} meter</b>
+            </p>
+          )}
+          <p className="mt-2 text-sm text-gray-600">
+            <b>Alamat Saat Ini:</b>
+            <br />
+            {address}
+          </p>
           <p className="mt-2 text-xs text-gray-400">
-            Koordinat: {location ? `${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}` : '...'}
+            Koordinat:{' '}
+            {location
+              ? `${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}`
+              : '...'}
           </p>
 
           <button
@@ -218,22 +256,37 @@ export default function CheckOutForm() {
         {/* 🚪 Tombol Absen Pulang */}
         <button
           onClick={handleCheckOut}
-          disabled={!canCheckOut || isSubmitting || !location || isFetchingLogbook}
+          disabled={isSubmitting || isOutOfRadius || !canCheckOut}
           className={`w-full py-4 text-white font-extrabold rounded-xl transition duration-300 shadow-xl ${
-            isSubmitting
+            isOutOfRadius || !canCheckOut
               ? 'bg-gray-400 cursor-not-allowed'
-              : canCheckOut
-              ? 'bg-blue-900 hover:bg-blue-800 shadow-blue-500/50'
-              : 'bg-gray-400 cursor-not-allowed'
+              : isSubmitting
+              ? 'bg-gray-400 cursor-wait'
+              : 'bg-blue-900 hover:bg-blue-800 shadow-blue-500/50'
           }`}
         >
-          {isSubmitting ? 'Memproses...' : 'SUBMIT ABSEN PULANG'}
+          {isSubmitting
+            ? 'Memproses...'
+            : isOutOfRadius
+            ? 'Anda di luar radius kantor'
+            : 'SUBMIT ABSEN PULANG'}
         </button>
+
+        {/* ⚠️ Peringatan di bawah tombol */}
+        {isOutOfRadius && (
+          <p className="mt-3 text-sm text-red-600 font-semibold text-center">
+            🚫 Anda berada di luar radius kantor (lebih dari {OFFICE_LOCATION.RADIUS_M} meter).
+          </p>
+        )}
 
         {/* ℹ️ Catatan */}
         <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 text-center">
           <p className="font-semibold text-blue-900 mb-1">Catatan:</p>
-          <p>Absen Pulang hanya bisa dilakukan setelah logbook hari ini berstatus <b>COMPLETED</b> dan lokasi Anda berada dalam radius 500 meter dari kantor.</p>
+          <p>
+            Absen Pulang hanya bisa dilakukan setelah logbook hari ini berstatus{' '}
+            <b>COMPLETED</b> dan lokasi Anda berada dalam radius{' '}
+            {OFFICE_LOCATION.RADIUS_M} meter dari kantor.
+          </p>
         </div>
       </main>
     </div>
