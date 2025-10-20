@@ -6,21 +6,11 @@ import { supabase } from '@/lib/supabaseClient'
 import toast, { Toaster } from 'react-hot-toast'
 
 const StatusBadge = ({ status }: { status: string }) => {
-  let styles = ''
-  switch (status) {
-    case 'Hadir':
-      styles = 'bg-green-100 text-green-800'
-      break
-    case 'Terlambat':
-      styles = 'bg-yellow-100 text-yellow-800'
-      break
-    case 'Tidak Hadir':
-      styles = 'bg-red-100 text-red-800'
-      break
-    default:
-      styles = 'bg-gray-100 text-gray-800'
-      status = 'Tidak Hadir'
-  }
+  const styles =
+    status === 'Hadir'
+      ? 'bg-green-100 text-green-800'
+      : 'bg-gray-100 text-gray-800'
+
   return (
     <div className={`px-3 py-1 text-sm font-medium rounded-md ${styles}`}>
       {status}
@@ -30,7 +20,7 @@ const StatusBadge = ({ status }: { status: string }) => {
 
 export default function RekapAbsensiPage() {
   const router = useRouter()
-  const [data, setData] = useState<any[]>([])
+  const [attendances, setAttendances] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -49,16 +39,25 @@ export default function RekapAbsensiPage() {
       }
 
       let query = supabase
-        .from('logbooks')
-        .select('id, log_date, start_time, end_time')
+        .from('attendances')
+        .select(
+          `
+          id,
+          attendance_date,
+          shift,
+          check_in,
+          check_out
+        `
+        )
         .eq('user_id', user.id)
-        .order('log_date', { ascending: false })
+        .order('attendance_date', { ascending: false })
+        .order('shift', { ascending: true })
 
       if (startDate && endDate) {
-        query = query.gte('log_date', startDate).lte('log_date', endDate)
+        query = query.gte('attendance_date', startDate).lte('attendance_date', endDate)
       }
 
-      const { data: logbooks, error } = await query
+      const { data, error } = await query
       if (error) {
         console.error(error)
         toast.error('Gagal mengambil data absensi')
@@ -66,45 +65,34 @@ export default function RekapAbsensiPage() {
         return
       }
 
-      // ✅ Hitung status otomatis dari jam masuk
-      const processed = (logbooks || []).map((log) => {
-        const start = log.start_time ? log.start_time.slice(0, 5) : null
-        let computedStatus = 'Tidak Hadir'
+      // Tentukan status: cukup ada check_in => Hadir
+      const processed = (data || []).map((att) => ({
+        ...att,
+        computedStatus: att.check_in ? 'Hadir' : 'Tidak Hadir',
+      }))
 
-        if (start) {
-          const [hour, minute] = start.split(':').map(Number)
-          if (hour > 8 || (hour === 8 && minute > 0)) {
-            computedStatus = 'Terlambat'
-          } else {
-            computedStatus = 'Hadir'
-          }
-        }
-
-        return { ...log, computedStatus }
-      })
-
-      setData(processed)
+      setAttendances(processed)
       setLoading(false)
     }
 
     fetchData()
   }, [startDate, endDate])
 
-  // ✅ Hitung statistik total
+  // Hitung statistik per tanggal unik
   const stats = useMemo(() => {
-    const counts = { Hadir: 0, Terlambat: 0, 'Tidak Hadir': 0 }
-    data.forEach((log) => {
-      if (log.computedStatus === 'Hadir') counts.Hadir++
-      else if (log.computedStatus === 'Terlambat') counts.Terlambat++
+    const uniqueDates = new Set(attendances.map((a) => a.attendance_date))
+    const counts = { Hadir: 0, 'Tidak Hadir': 0 }
+    attendances.forEach((a) => {
+      if (a.computedStatus === 'Hadir') counts.Hadir++
       else counts['Tidak Hadir']++
     })
-    return { ...counts, totalHari: data.length }
-  }, [data])
+    return { ...counts, totalHari: uniqueDates.size }
+  }, [attendances])
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '-'
     const date = new Date(dateStr)
-    return date.toLocaleString('id-ID', {
+    return date.toLocaleDateString('id-ID', {
       weekday: 'short',
       day: 'numeric',
       month: 'short',
@@ -142,7 +130,6 @@ export default function RekapAbsensiPage() {
         <h1 className="text-xl font-bold">Rekap Absensi</h1>
       </header>
 
-      {/* Konten */}
       <main className="p-4 max-w-lg mx-auto">
         {/* Filter Periode */}
         <section className="bg-white rounded-lg shadow p-4 mb-5">
@@ -182,10 +169,6 @@ export default function RekapAbsensiPage() {
               <span className="font-semibold">{stats.Hadir}</span>
             </div>
             <div className="flex justify-between">
-              <span>Terlambat</span>
-              <span className="font-semibold text-red-600">{stats.Terlambat}</span>
-            </div>
-            <div className="flex justify-between">
               <span>Tidak Hadir</span>
               <span className="font-semibold">{stats['Tidak Hadir']}</span>
             </div>
@@ -197,35 +180,28 @@ export default function RekapAbsensiPage() {
           <h2 className="text-lg font-bold text-gray-800 mb-4">Riwayat Absensi</h2>
           {loading ? (
             <p className="text-center text-gray-500 py-8">Memuat data...</p>
-          ) : data.length === 0 ? (
+          ) : attendances.length === 0 ? (
             <div className="text-center py-8 bg-white rounded-lg shadow">
               <p className="text-gray-500">Tidak ada data untuk ditampilkan.</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {data.map((log) => {
-                // tampilkan badge hijau “Hadir”, tapi tetap hitung Terlambat di statistik
-                const showStatus =
-                  log.computedStatus === 'Terlambat' ? 'Hadir' : log.computedStatus
-
-                return (
-                  <div
-                    key={log.id}
-                    className="bg-white rounded-lg shadow p-4 flex justify-between items-center"
-                  >
-                    <div>
-                      <p className="font-semibold text-gray-900">
-                        {formatDate(log.log_date)}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        Masuk: {log.start_time?.slice(0, 5) || '-'} Pulang:{' '}
-                        {log.end_time?.slice(0, 5) || '-'}
-                      </p>
-                    </div>
-                    <StatusBadge status={showStatus || 'Tidak Hadir'} />
+              {attendances.map((att) => (
+                <div
+                  key={`${att.attendance_date}-${att.shift}`}
+                  className="bg-white rounded-lg shadow p-4 flex justify-between items-center"
+                >
+                  <div>
+                    <p className="font-semibold text-gray-900">
+                      {formatDate(att.attendance_date)} ({att.shift})
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      Masuk: {att.check_in?.slice(0, 5) || '-'} Pulang: {att.check_out?.slice(0, 5) || '-'}
+                    </p>
                   </div>
-                )
-              })}
+                  <StatusBadge status={att.computedStatus} />
+                </div>
+              ))}
             </div>
           )}
         </section>

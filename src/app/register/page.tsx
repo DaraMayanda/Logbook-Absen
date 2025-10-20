@@ -18,28 +18,22 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [position, setPosition] = useState('PPNPN')
+  const [position, setPosition] = useState('PPNPN') // default awal
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
-  // 💪 Status kekuatan password
   const [passwordStrength, setPasswordStrength] = useState<'Weak' | 'Medium' | 'Strong' | null>(null)
 
-  // Fungsi validasi password kuat
+  // Validasi password kuat
   const validatePassword = (pass: string) => {
-    const minLength = /.{8,}/
-    const hasUppercase = /[A-Z]/
-    const hasNumber = /[0-9]/
-    const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/
-    if (!minLength.test(pass)) return 'Password minimal 8 karakter.'
-    if (!hasUppercase.test(pass)) return 'Password harus mengandung huruf besar.'
-    if (!hasNumber.test(pass)) return 'Password harus mengandung angka.'
-    if (!hasSpecial.test(pass)) return 'Password harus mengandung karakter spesial.'
+    if (!/.{8,}/.test(pass)) return 'Password minimal 8 karakter.'
+    if (!/[A-Z]/.test(pass)) return 'Password harus mengandung huruf besar.'
+    if (!/[0-9]/.test(pass)) return 'Password harus mengandung angka.'
+    if (!/[!@#$%^&*(),.?":{}|<>]/.test(pass)) return 'Password harus mengandung karakter spesial.'
     return null
   }
 
-  // 🧠 Logika penilaian kekuatan password
   const evaluateStrength = (pass: string) => {
     let score = 0
     if (/.{8,}/.test(pass)) score++
@@ -48,9 +42,8 @@ export default function RegisterPage() {
     if (/[!@#$%^&*(),.?":{}|<>]/.test(pass)) score++
 
     if (score <= 1) setPasswordStrength('Weak')
-    else if (score === 2 || score === 3) setPasswordStrength('Medium')
-    else if (score === 4) setPasswordStrength('Strong')
-    else setPasswordStrength(null)
+    else if (score <= 3) setPasswordStrength('Medium')
+    else setPasswordStrength('Strong')
   }
 
   const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -60,18 +53,21 @@ export default function RegisterPage() {
     setLoading(true)
 
     try {
-      if (!fullName.trim() || !email.trim() || !password || !confirmPassword || !position.trim()) {
+      // Validasi semua field
+      if (!fullName.trim() || !email.trim() || !password || !confirmPassword || !position) {
         throw new Error('Semua field harus diisi.')
       }
 
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      if (!emailRegex.test(email)) throw new Error('Format email tidak valid.')
+      // Validasi email
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Format email tidak valid.')
 
+      // Validasi password
       const passwordError = validatePassword(password)
       if (passwordError) throw new Error(passwordError)
 
       if (password !== confirmPassword) throw new Error('Konfirmasi password tidak sama.')
 
+      // Register ke Supabase
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -79,7 +75,7 @@ export default function RegisterPage() {
           data: {
             full_name: fullName.trim(),
             role: 'pegawai',
-            position
+            position: position
           },
           emailRedirectTo: `${window.location.origin}/login`
         }
@@ -87,18 +83,15 @@ export default function RegisterPage() {
 
       if (signUpError) throw signUpError
 
-      if (data.user || data.session === null) {
-        setSuccess('✅ Registrasi berhasil! Cek email Anda untuk verifikasi dan login.')
-        setFullName('')
-        setEmail('')
-        setPassword('')
-        setConfirmPassword('')
-        setPosition('PPNPN')
-        setPasswordStrength(null)
-        setTimeout(() => router.push('/login'), 3000)
-      } else {
-        setSuccess('Registrasi berhasil. Silakan cek email Anda untuk verifikasi.')
-      }
+      setSuccess('✅ Registrasi berhasil! Cek email Anda untuk verifikasi dan login.')
+      // Reset form
+      setFullName('')
+      setEmail('')
+      setPassword('')
+      setConfirmPassword('')
+      setPosition('PPNPN')
+      setPasswordStrength(null)
+      setTimeout(() => router.push('/login'), 3000)
     } catch (err: any) {
       console.error('Error register:', err)
       setError(
@@ -115,9 +108,7 @@ export default function RegisterPage() {
       {/* Header */}
       <div className="w-full bg-[#003366] px-8 pt-12 pb-24 text-white">
         <h1 className="text-center text-3xl font-bold">Create Your Account</h1>
-        <p className="mt-2 text-center text-sm text-blue-100">
-          Isi data diri Anda untuk melanjutkan
-        </p>
+        <p className="mt-2 text-center text-sm text-blue-100">Isi data diri Anda untuk melanjutkan</p>
       </div>
 
       {/* Form */}
@@ -204,7 +195,6 @@ export default function RegisterPage() {
                 />
               </div>
 
-              {/* 💪 Indikator kekuatan password */}
               {password && (
                 <div className="mt-2 text-sm font-medium">
                   <span
@@ -259,11 +249,9 @@ export default function RegisterPage() {
               </select>
             </div>
 
-            {/* Pesan Error / Success */}
             {error && <p className="text-sm text-red-600">{error}</p>}
             {success && <p className="text-sm text-green-600">{success}</p>}
 
-            {/* Tombol Submit */}
             <div>
               <button
                 type="submit"
@@ -275,7 +263,6 @@ export default function RegisterPage() {
             </div>
           </form>
 
-          {/* Link Login */}
           <p className="text-center text-sm text-gray-600">
             Sudah punya akun?{' '}
             <Link href="/login" className="font-medium text-[#4A90E2] hover:text-[#003366]">
