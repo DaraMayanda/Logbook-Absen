@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -11,7 +11,7 @@ const InputIcon = ({ children }: { children: React.ReactNode }) => (
   </div>
 )
 
-export default function LoginPage() {
+function LoginContent() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -20,8 +20,6 @@ export default function LoginPage() {
 
   const router = useRouter()
   const searchParams = useSearchParams()
-
-  // ambil parameter dari middleware (misal redirectedFrom=/dashboard)
   const redirectTo = searchParams.get('redirectedFrom') || '/dashboard'
 
   // 🔹 LOGIN HANDLER
@@ -32,7 +30,8 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      if (!email.trim() || !password) throw new Error('Email dan password wajib diisi.')
+      if (!email.trim() || !password)
+        throw new Error('Email dan password wajib diisi.')
 
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
@@ -43,7 +42,7 @@ export default function LoginPage() {
       if (!data?.session) throw new Error('Pastikan email sudah terverifikasi.')
 
       localStorage.setItem('supabaseSession', JSON.stringify(data.session))
-      router.push(redirectTo) // ⬅️ otomatis kembali ke halaman semula
+      router.push(redirectTo)
     } catch (err: any) {
       console.error('Login error:', err)
       setError(err.message || 'Terjadi kesalahan saat login.')
@@ -64,7 +63,7 @@ export default function LoginPage() {
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: 'https://logbook-absen.vercel.app/reset-password', // ganti sesuai domain vercel kamu
+        redirectTo: 'https://logbook-absen.vercel.app/reset-password',
       })
 
       if (error) throw error
@@ -150,7 +149,6 @@ export default function LoginPage() {
                 />
               </div>
 
-              {/* Forgot Password */}
               <div className="text-right mt-2">
                 <button
                   type="button"
@@ -185,5 +183,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="text-center py-10 text-gray-500">Memuat halaman login...</div>}>
+      <LoginContent />
+    </Suspense>
   )
 }
