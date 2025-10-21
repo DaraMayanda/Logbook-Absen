@@ -82,15 +82,13 @@ export default function CheckOutForm() {
     fetchUser();
   }, []);
 
-  // --- Ambil shift aktif & logbook ---
+  // --- Ambil attendance shift aktif & logbook ---
   const fetchActiveShift = async () => {
     if (!userId) return;
-
     try {
       const now = new Date();
-      // Ambil semua attendance hari ini & kemarin (untuk shift malam lintas hari)
       const todayStr = now.toISOString().split('T')[0];
-      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const yesterday = new Date(now.getTime() - 24*60*60*1000).toISOString().split('T')[0];
 
       const { data: attendances } = await supabase
         .from('attendances')
@@ -99,27 +97,15 @@ export default function CheckOutForm() {
         .eq('user_id', userId);
 
       if (!attendances || attendances.length === 0) {
-        setAttendanceId(null);
-        setCurrentShift(null);
-        setLogbookStatus(null);
-        setCanCheckOut(false);
-        return;
+        setAttendanceId(null); setCurrentShift(null); setLogbookStatus(null); setCanCheckOut(false); return;
       }
 
-      // shift aktif = shift yang belum checkout
       const activeShift = attendances.find(a => !a.check_out);
-      if (!activeShift) {
-        setAttendanceId(null);
-        setCurrentShift(null);
-        setLogbookStatus(null);
-        setCanCheckOut(false);
-        return;
-      }
+      if (!activeShift) { setAttendanceId(null); setCurrentShift(null); setLogbookStatus(null); setCanCheckOut(false); return; }
 
       setAttendanceId(activeShift.id);
       setCurrentShift(activeShift.shift as 'pagi' | 'malam');
 
-      // ambil logbook shift aktif
       const { data: logbook } = await supabase
         .from('logbooks')
         .select('status')
@@ -150,16 +136,17 @@ export default function CheckOutForm() {
     setIsSubmitting(true);
     try {
       const now = new Date();
-
       const { error } = await supabase
         .from('attendances')
         .update({
-          check_out: now.toISOString(),  // timestamptz aman
-          status: 'COMPLETED',           // enum valid
-          location: address || null
+          check_out: now.toISOString(),
+          check_out_location: address,
+          check_out_latitude: location.lat,
+          check_out_longitude: location.lon,
+          check_out_distance_m: distance,
+          status: 'COMPLETED'
         })
         .eq('id', attendanceId);
-
       if (error) throw error;
 
       toast.success(`✅ Absen Pulang Shift ${currentShift.toUpperCase()} berhasil!`);
@@ -167,9 +154,7 @@ export default function CheckOutForm() {
     } catch (err: any) {
       console.error('DEBUG handleCheckOut error full:', err);
       toast.error(err?.message || 'Gagal absen pulang');
-    } finally {
-      setIsSubmitting(false);
-    }
+    } finally { setIsSubmitting(false); }
   };
 
   const formattedTime = currentTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
