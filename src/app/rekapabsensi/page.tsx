@@ -40,15 +40,13 @@ export default function RekapAbsensiPage() {
 
       let query = supabase
         .from('attendances')
-        .select(
-          `
+        .select(`
           id,
           attendance_date,
           shift,
           check_in,
           check_out
-        `
-        )
+        `)
         .eq('user_id', user.id)
         .order('attendance_date', { ascending: false })
         .order('shift', { ascending: true })
@@ -65,7 +63,7 @@ export default function RekapAbsensiPage() {
         return
       }
 
-      // Tentukan status: cukup ada check_in => Hadir
+      // Status otomatis berdasarkan check_in
       const processed = (data || []).map((att) => ({
         ...att,
         computedStatus: att.check_in ? 'Hadir' : 'Tidak Hadir',
@@ -89,6 +87,7 @@ export default function RekapAbsensiPage() {
     return { ...counts, totalHari: uniqueDates.size }
   }, [attendances])
 
+  // Format tanggal & jam
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '-'
     const date = new Date(dateStr)
@@ -97,6 +96,17 @@ export default function RekapAbsensiPage() {
       day: 'numeric',
       month: 'short',
       year: 'numeric',
+    })
+  }
+
+  const formatTime = (timeStr: string | null) => {
+    if (!timeStr) return '-'
+    const date = new Date(timeStr)
+    // Format jam:menit WIB
+    return date.toLocaleTimeString('id-ID', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
     })
   }
 
@@ -196,7 +206,14 @@ export default function RekapAbsensiPage() {
                       {formatDate(att.attendance_date)} ({att.shift})
                     </p>
                     <p className="text-sm text-gray-500">
-                      Masuk: {att.check_in?.slice(0, 5) || '-'} Pulang: {att.check_out?.slice(0, 5) || '-'}
+                      Masuk:{' '}
+                      <span className="font-medium text-gray-800">
+                        {formatTime(att.check_in)}
+                      </span>{' '}
+                      | Pulang:{' '}
+                      <span className="font-medium text-gray-800">
+                        {att.check_out ? formatTime(att.check_out) : 'Belum Checkout'}
+                      </span>
                     </p>
                   </div>
                   <StatusBadge status={att.computedStatus} />
