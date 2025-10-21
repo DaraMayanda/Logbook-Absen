@@ -66,6 +66,12 @@ export default function LogbookPage() {
     "Menunggu pegawai selama kegiatan lapangan",
     "Lainnya"
   ]
+  const tugasCS = [
+  "Menyapu dan mengepel ruangan",
+  "Membersihkan kamar mandi",
+  "Lainnya"
+]
+
 
   // --- Fetch user, attendance & logbook ---
   useEffect(() => {
@@ -87,8 +93,11 @@ export default function LogbookPage() {
 
         // --- Set standardTasks sesuai posisi ---
         if (position.toLowerCase().includes('satpam')) setStandardTasks(tugasSatpam)
-        else if (position.toLowerCase().includes('supir')) setStandardTasks(tugasSupir)
-        else if (position) setStandardTasks(tugasPPNPN)
+      else if (position.toLowerCase().includes('supir')) setStandardTasks(tugasSupir)
+      else if (position.toLowerCase().includes('cs')) setStandardTasks(tugasCS)  // <-- fix
+      else if (position) setStandardTasks(tugasPPNPN)
+
+  
         else setStandardTasks([])
 
         // --- Ambil semua attendance hari ini ---
