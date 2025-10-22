@@ -1,28 +1,27 @@
 'use client'
 
-import { useState, Suspense } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-const InputIcon = ({ children }: { children: React.ReactNode }) => (
-  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-    {children}
-  </div>
-)
-
-function LoginContent() {
+function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [redirectTo, setRedirectTo] = useState('/dashboard')
 
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirectedFrom') || '/dashboard'
 
-  // 🔹 LOGIN HANDLER
+  // set redirectTo di client
+  useEffect(() => {
+    const redirected = searchParams.get('redirectedFrom')
+    if (redirected) setRedirectTo(redirected)
+  }, [searchParams])
+
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError(null)
@@ -42,7 +41,18 @@ function LoginContent() {
       if (!data?.session) throw new Error('Pastikan email sudah terverifikasi.')
 
       localStorage.setItem('supabaseSession', JSON.stringify(data.session))
-      router.push(redirectTo)
+
+      const userId = data.user.id
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('full_name, role, is_admin')
+        .eq('id', userId)
+        .single()
+
+      if (profileError) throw profileError
+
+      if (profile.is_admin) router.push('/dashboardadmin')
+      else router.push('/dashboard')
     } catch (err: any) {
       console.error('Login error:', err)
       setError(err.message || 'Terjadi kesalahan saat login.')
@@ -51,21 +61,17 @@ function LoginContent() {
     }
   }
 
-  // 🔹 RESET PASSWORD HANDLER
   const handleForgotPassword = async () => {
     setError(null)
     setMessage(null)
-
     if (!email.trim()) {
       setError('Masukkan email terlebih dahulu untuk reset password.')
       return
     }
-
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
         redirectTo: 'https://logbook-absen.vercel.app/reset-password',
       })
-
       if (error) throw error
       setMessage('Link reset password telah dikirim ke email kamu.')
     } catch (err: any) {
@@ -89,72 +95,34 @@ function LoginContent() {
           <form className="space-y-6" onSubmit={handleLogin}>
             {/* Email */}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email
-              </label>
-              <div className="relative mt-1">
-                <InputIcon>
-                  <svg
-                    className="h-5 w-5 text-gray-400"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
-                    <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
-                  </svg>
-                </InputIcon>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  required
-                  className="block w-full rounded-lg border-gray-300 py-3 pl-10 pr-3 shadow-sm focus:border-[#4A90E2] focus:ring-[#4A90E2] sm:text-sm"
-                  placeholder="Masukkan Email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email</label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                required
+                className="block w-full rounded-lg border-gray-300 py-3 pl-3 pr-3 shadow-sm focus:border-[#4A90E2] focus:ring-[#4A90E2] sm:text-sm"
+                placeholder="Masukkan Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </div>
 
             {/* Password */}
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Password
-              </label>
-              <div className="relative mt-1">
-                <InputIcon>
-                  <svg
-                    className="h-5 w-5 text-gray-400"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </InputIcon>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  required
-                  className="block w-full rounded-lg border-gray-300 py-3 pl-10 pr-3 shadow-sm focus:border-[#4A90E2] focus:ring-[#4A90E2] sm:text-sm"
-                  placeholder="Masukkan Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">Password</label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                required
+                className="block w-full rounded-lg border-gray-300 py-3 pl-3 pr-3 shadow-sm focus:border-[#4A90E2] focus:ring-[#4A90E2] sm:text-sm"
+                placeholder="Masukkan Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
               <div className="text-right mt-2">
-                <button
-                  type="button"
-                  onClick={handleForgotPassword}
-                  className="text-sm font-medium text-[#4A90E2] hover:text-[#003366]"
-                >
+                <button type="button" onClick={handleForgotPassword} className="text-sm font-medium text-[#4A90E2] hover:text-[#003366]">
                   Lupa password?
                 </button>
               </div>
@@ -175,10 +143,7 @@ function LoginContent() {
           </form>
 
           <p className="text-center text-sm text-gray-600">
-            Belum punya akun?{' '}
-            <Link href="/register" className="font-medium text-[#4A90E2] hover:text-[#003366]">
-              Sign Up
-            </Link>
+            Belum punya akun? <Link href="/register" className="font-medium text-[#4A90E2] hover:text-[#003366]">Sign Up</Link>
           </p>
         </div>
       </div>
@@ -186,10 +151,4 @@ function LoginContent() {
   )
 }
 
-export default function LoginPage() {
-  return (
-    <Suspense fallback={<div className="text-center py-10 text-gray-500">Memuat halaman login...</div>}>
-      <LoginContent />
-    </Suspense>
-  )
-}
+export default LoginPage
