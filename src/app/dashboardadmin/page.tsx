@@ -131,7 +131,7 @@ export default function DashboardAdmin() {
         <div className="flex flex-col gap-4">
           <FeatureCard icon={FileText} title="Data Pegawai" description="Lihat semua data pegawai." href="/datapegawai" />
           <FeatureCard icon={Briefcase} title="Approval Cuti" description="Lihat dan approve pengajuan cuti pegawai." href="/approvalcuti" />
-          <FeatureCard icon={BarChart2} title="Rekap Absensi" description="Lihat laporan absensi bulanan pegawai." href="/admin/rekapabsensi" />
+          <FeatureCard icon={BarChart2} title="Rekap Absensi" description="Lihat laporan absensi bulanan pegawai." href="/rekapabsensiadmin" />
         </div>
 
         {/* Info atau alert */}
