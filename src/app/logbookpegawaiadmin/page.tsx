@@ -171,12 +171,12 @@ export default function LogbookPegawaiAdminPage() {
         placeholder="Cari nama, jabatan, atau status..."
         value={search}
         onChange={e => setSearch(e.target.value)}
-        className="mb-4 w-full rounded-md border border-gray-300 p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="mb-4 w-full rounded-md border border-gray-300 p-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
       />
 
-      <div className="overflow-x-auto bg-white rounded-xl shadow-md">
+      <div className="overflow-x-auto bg-white rounded-xl shadow-sm">
         <table className="w-full border-collapse">
-          <thead className="bg-blue-100 text-gray-700">
+          <thead className="bg-gray-100 text-gray-800">
             <tr>
               <th className="p-3 text-left">Nama</th>
               <th className="p-3 text-left">Jabatan</th>

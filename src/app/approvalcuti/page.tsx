@@ -50,7 +50,7 @@ export default function ApprovalCutiPage() {
   const router = useRouter()
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([])
   const [approvals, setApprovals] = useState<LeaveApproval[]>([])
-  const [approverRole, setApproverRole] = useState<'kasubbag' | 'kepala_kantor'>('kasubbag')
+  const [approverRole, setApproverRole] = useState<'kasubbag' | 'kepala_kantor' | null>(null)
   const [loadingId, setLoadingId] = useState<number | null>(null)
   const [loadingPage, setLoadingPage] = useState<boolean>(true)
   const [globalFilter, setGlobalFilter] = useState('')
@@ -98,9 +98,22 @@ export default function ApprovalCutiPage() {
     }
   }
 
+  const fetchApproverRole = async () => {
+    const { data: userData } = await supabase.auth.getUser()
+    const email = userData.user?.email
+    if (!email) return
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('position')
+      .eq('email', email)
+      .single()
+    if (profile?.position === 'kasubbag') setApproverRole('kasubbag')
+    else if (profile?.position === 'kepala_kantor') setApproverRole('kepala_kantor')
+  }
+
   // ======================= EFFECT =======================
   useEffect(() => {
-    const init = async () => await Promise.all([fetchLeaveRequests(), fetchApprovals()])
+    const init = async () => await Promise.all([fetchLeaveRequests(), fetchApprovals(), fetchApproverRole()])
     init()
     const channel = supabase
       .channel('realtime-approvals')
@@ -118,17 +131,23 @@ export default function ApprovalCutiPage() {
 
   // ======================= APPROVAL =======================
   const insertApproval = async (leave_request_id: number, status: 'Disetujui' | 'Ditolak') => {
+    if (!approverRole) return alert('Role belum ditentukan.')
     setLoadingId(leave_request_id)
     try {
       const { data: userData } = await supabase.auth.getUser()
       const approver_id = userData.user?.id
       if (!approver_id) return alert('❌ Tidak ditemukan ID pengguna.')
+
       const level = approverRole === 'kasubbag' ? 1 : 2
-      if (level === 2 && getApprovalRecord(leave_request_id, 1)?.status !== 'Disetujui') {
+      const kasubApproval = getApprovalRecord(leave_request_id, 1)
+      if (level === 2 && kasubApproval?.status !== 'Disetujui') {
         return alert('❌ Kepala Kantor hanya dapat menyetujui jika Kasubbag sudah menyetujui.')
       }
+
       const existingApproval = getApprovalRecord(leave_request_id, level)
-      const qrValue = level === 2 && status === 'Disetujui' ? `${window.location.origin}/leave/${leave_request_id}` : existingApproval?.qr_code_url || null
+      const qrValue = level === 2 && status === 'Disetujui'
+        ? `${window.location.origin}/leave/${leave_request_id}`
+        : existingApproval?.qr_code_url || null
 
       if (existingApproval) {
         await supabase
@@ -370,18 +389,13 @@ export default function ApprovalCutiPage() {
               </tbody>
             </table>
           </div>
-
-          <div className="flex items-center justify-between gap-2 mt-3">
-            <div>
-              <Button size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
-                {'<'}
-              </Button>
-              <Button size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} className="ml-2">
-                {'>'}
-              </Button>
-            </div>
-            <span>
-              Halaman {table.getState().pagination.pageIndex + 1} dari {table.getPageCount()}
+          <div className="flex items-center justify-between mt-2 gap-2">
+            <Button onClick={() => table.setPageIndex(0)} disabled={!table.getCanPreviousPage()} size="sm">{'<<'}</Button>
+            <Button onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()} size="sm">{'<'}</Button>
+            <Button onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} size="sm">{'>'}</Button>
+            <Button onClick={() => table.setPageIndex(table.getPageCount() - 1)} disabled={!table.getCanNextPage()} size="sm">{'>>'}</Button>
+            <span className="ml-auto">
+              Halaman <strong>{table.getState().pagination.pageIndex + 1} dari {table.getPageCount()}</strong>
             </span>
           </div>
         </CardContent>

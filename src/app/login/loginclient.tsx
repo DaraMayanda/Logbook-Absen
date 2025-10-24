@@ -5,22 +5,24 @@ import { supabase } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-// Perhatikan: Nama komponen diubah menjadi LoginClient
-export default function loginclient() {
+export default function LoginClient() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const [redirectTo, setRedirectTo] = useState('/dashboard')
+  const [redirectTo, setRedirectTo] = useState<string | null>(null)
 
   const router = useRouter()
-  const searchParams = useSearchParams() // Ini sekarang aman digunakan di sini
+  const searchParams = useSearchParams()
 
-  // set redirectTo di client
+  // Ambil query redirect jika ada
   useEffect(() => {
     const redirected = searchParams.get('redirectedFrom')
-    if (redirected) setRedirectTo(redirected)
+    if (redirected) {
+      console.log('[DEBUG] Redirected from query:', redirected)
+      setRedirectTo(redirected)
+    }
   }, [searchParams])
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -33,6 +35,9 @@ export default function loginclient() {
       if (!email.trim() || !password)
         throw new Error('Email dan password wajib diisi.')
 
+      console.log('[DEBUG] Attempting login with email:', email)
+
+      // Login ke Supabase
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
@@ -41,21 +46,44 @@ export default function loginclient() {
       if (signInError) throw signInError
       if (!data?.session) throw new Error('Pastikan email sudah terverifikasi.')
 
+      console.log('[DEBUG] Login successful, session:', data.session)
       localStorage.setItem('supabaseSession', JSON.stringify(data.session))
 
       const userId = data.user.id
+      console.log('[DEBUG] User ID:', userId)
+
+      // Ambil profile dari tabel profiles
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('full_name, role, is_admin')
+        .select('full_name, role, position, is_admin')
         .eq('id', userId)
         .single()
 
       if (profileError) throw profileError
+      console.log('[DEBUG] Profile from DB:', profile)
 
-      if (profile.is_admin) router.push('/dashboardadmin')
-      else router.push('/dashboard')
+      // --- LOGIKA ADMIN SUPER KETAT ---
+      const isAdmin =
+        profile.is_admin === true || profile.is_admin === 'true' || profile.role === 'kasubbag' || profile.role === 'kepala_kantor'
+
+      console.log('[DEBUG] isAdmin boolean check:', profile.is_admin)
+      console.log('[DEBUG] isAdmin role check:', profile.role)
+      console.log('[DEBUG] Final isAdmin determination:', isAdmin)
+
+      if (isAdmin) {
+        console.log('[DEBUG] Redirecting to /dashboardadmin (admin)')
+        router.push('/dashboardadmin')
+      } else {
+        if (redirectTo) {
+          console.log('[DEBUG] Redirecting to query redirect:', redirectTo)
+          router.push(redirectTo)
+        } else {
+          console.log('[DEBUG] Redirecting to /dashboard (pegawai biasa)')
+          router.push('/dashboard')
+        }
+      }
     } catch (err: any) {
-      console.error('Login error:', err)
+      console.error('[DEBUG] Login error:', err)
       setError(err.message || 'Terjadi kesalahan saat login.')
     } finally {
       setLoading(false)
@@ -65,17 +93,21 @@ export default function loginclient() {
   const handleForgotPassword = async () => {
     setError(null)
     setMessage(null)
+
     if (!email.trim()) {
       setError('Masukkan email terlebih dahulu untuk reset password.')
       return
     }
+
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: 'https://logbook-absen.vercel.app/reset-password',
+        redirectTo: 'http://localhost:3000/reset-password', // ganti sesuai localhost
       })
       if (error) throw error
       setMessage('Link reset password telah dikirim ke email kamu.')
+      console.log('[DEBUG] Reset password link sent to:', email)
     } catch (err: any) {
+      console.error('[DEBUG] Reset password error:', err)
       setError(err.message || 'Gagal mengirim link reset password.')
     }
   }
@@ -123,7 +155,11 @@ export default function loginclient() {
                 onChange={(e) => setPassword(e.target.value)}
               />
               <div className="text-right mt-2">
-                <button type="button" onClick={handleForgotPassword} className="text-sm font-medium text-[#4A90E2] hover:text-[#003366]">
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  className="text-sm font-medium text-[#4A90E2] hover:text-[#003366]"
+                >
                   Lupa password?
                 </button>
               </div>

@@ -61,18 +61,18 @@ export default function DataPegawaiPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50">
         <div className="flex flex-col items-center">
-          <RefreshCw className="h-8 w-8 animate-spin text-green-500" />
-          <p className="mt-4 text-gray-600 font-semibold">Memuat Data Pegawai...</p>
+          <RefreshCw className="h-8 w-8 animate-spin text-blue-400" />
+          <p className="mt-4 text-gray-600 font-medium">Memuat Data Pegawai...</p>
         </div>
       </div>
     );
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans p-5">
+    <div className="min-h-screen bg-gray-50 font-sans p-6">
       {/* Tombol kembali */}
       <button
-        onClick={() => router.push('/dashboardadmin')} // Ganti dengan path dashboard
-        className="mb-4 flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition"
+        onClick={() => router.push('/dashboardadmin')}
+        className="mb-4 flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg shadow-sm transition"
       >
         <ArrowLeft size={20} /> Kembali ke Dashboard
       </button>
@@ -82,33 +82,31 @@ export default function DataPegawaiPage() {
       <input
         type="text"
         placeholder="Cari nama atau jabatan..."
-        className="mb-6 w-full md:w-1/2 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400 shadow-sm"
+        className="mb-6 w-full md:w-1/2 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-sm"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
 
       {filteredList.length === 0 ? (
-        <p className="text-gray-600">Belum ada pegawai terdaftar atau tidak ditemukan.</p>
+        <p className="text-gray-500">Belum ada pegawai terdaftar atau tidak ditemukan.</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredList.map((pegawai, index) => (
             <div
               key={pegawai.id}
-              className={`p-5 rounded-xl shadow-lg border-l-4 transition duration-300 hover:scale-105 cursor-pointer ${
-                index % 2 === 0 ? 'bg-green-50 border-green-400' : 'bg-green-100 border-green-500'
-              }`}
+              className="p-5 rounded-xl shadow-sm border border-gray-200 bg-white hover:shadow-md transition cursor-pointer"
             >
               <div className="flex items-center space-x-4 mb-4">
-                <div className="p-3 rounded-full bg-green-200 text-green-800">
+                <div className="p-3 rounded-full bg-blue-100 text-blue-600">
                   <User size={28} />
                 </div>
                 <div>
-                  <h2 className="font-bold text-lg text-gray-800">{pegawai.full_name}</h2>
+                  <h2 className="font-semibold text-lg text-gray-800">{pegawai.full_name}</h2>
                   <p className="text-sm text-gray-600">{pegawai.position}</p>
                 </div>
               </div>
               <p className="text-sm text-gray-700">
-                <span className="font-semibold">Role:</span> {pegawai.role}
+                <span className="font-medium">Role:</span> {pegawai.role}
               </p>
             </div>
           ))}

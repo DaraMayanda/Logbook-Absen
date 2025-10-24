@@ -34,8 +34,8 @@ type Profile = {
 const StatusBadge = ({ status }: { status?: string }) => {
   const styles =
     status === 'Hadir'
-      ? 'bg-green-100 text-green-800'
-      : 'bg-red-100 text-red-800'
+      ? 'bg-green-50 text-green-600'
+      : 'bg-red-50 text-red-600'
 
   return <div className={`px-3 py-1 text-sm font-medium rounded-md ${styles}`}>{status || '-'}</div>
 }
@@ -43,8 +43,8 @@ const StatusBadge = ({ status }: { status?: string }) => {
 const TerlambatBadge = ({ terlambat }: { terlambat?: string }) => {
   const styles =
     terlambat === 'Ya'
-      ? 'bg-yellow-100 text-yellow-800'
-      : 'bg-green-100 text-green-800'
+      ? 'bg-yellow-50 text-yellow-800'
+      : 'bg-green-50 text-green-600'
 
   return <div className={`px-3 py-1 text-sm font-medium rounded-md ${styles}`}>{terlambat || '-'}</div>
 }
@@ -128,7 +128,6 @@ export default function RekapAbsensiAdmin() {
   // =====================================================
   const formatDate = (dateStr: string) => dateStr ? new Date(dateStr).toLocaleDateString('id-ID') : '-'
   const formatDateTime = (dateStr: string | null) => dateStr ? new Date(dateStr).toLocaleString('id-ID') : '-'
-  const formatLocation = (loc: string | null) => loc ? (loc.length > 60 ? loc.slice(0, 57) + '...' : loc) : '-'
 
   // Statistik agregat per pegawai
   const statsPerEmployee = useMemo(() => {
@@ -147,7 +146,7 @@ export default function RekapAbsensiAdmin() {
     <div className="min-h-screen bg-gray-50 p-6 font-sans">
       <Toaster position="top-center" />
 
-      {/* Tombol Kembali Hijau di Pojok Kiri Atas */}
+      {/* Tombol Kembali */}
       <div className="mb-4">
         <Button
           onClick={() => router.push('/dashboardadmin')}
@@ -158,7 +157,7 @@ export default function RekapAbsensiAdmin() {
         </Button>
       </div>
 
-      <h1 className="text-3xl font-bold text-blue-900 mb-4">Rekap Absensi Admin</h1>
+      <h1 className="text-3xl font-bold text-gray-800 mb-4">Rekap Absensi Admin</h1>
 
       {/* Filters */}
       <div className="flex flex-wrap gap-4 mb-4">
@@ -167,28 +166,28 @@ export default function RekapAbsensiAdmin() {
           placeholder="Cari nama pegawai..."
           value={searchName}
           onChange={e => setSearchName(e.target.value)}
-          className="border border-blue-300 rounded px-3 py-2 w-64 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="border border-gray-300 rounded px-3 py-2 w-64 focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
         <input
           type="date"
           value={filterDate}
           onChange={e => setFilterDate(e.target.value)}
-          className="border border-blue-300 rounded px-3 py-2 w-52 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="border border-gray-300 rounded px-3 py-2 w-52 focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
         <input
           type="month"
           value={filterMonth}
           onChange={e => setFilterMonth(e.target.value)}
-          className="border border-blue-300 rounded px-3 py-2 w-52 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="border border-gray-300 rounded px-3 py-2 w-52 focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
         <input
           type="number"
           placeholder="Tahun"
           value={filterYear}
           onChange={e => setFilterYear(e.target.value)}
-          className="border border-blue-300 rounded px-3 py-2 w-32 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="border border-gray-300 rounded px-3 py-2 w-32 focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
-        <Button className="bg-blue-700 hover:bg-blue-800" onClick={fetchData}>
+        <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={fetchData}>
           Refresh
         </Button>
       </div>
@@ -197,7 +196,7 @@ export default function RekapAbsensiAdmin() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         {Object.entries(statsPerEmployee).map(([name, stats]) => (
           <Card key={name} className="border shadow-sm">
-            <CardHeader className="bg-blue-700 text-white">
+            <CardHeader className="bg-gray-100 text-gray-800">
               <CardTitle>{name}</CardTitle>
             </CardHeader>
             <CardContent>
@@ -210,7 +209,7 @@ export default function RekapAbsensiAdmin() {
 
       {/* Table */}
       <Card className="border shadow-sm">
-        <CardHeader className="bg-blue-700 text-white">
+        <CardHeader className="bg-gray-100 text-gray-800">
           <CardTitle>Data Absensi</CardTitle>
         </CardHeader>
         <CardContent>
@@ -222,9 +221,9 @@ export default function RekapAbsensiAdmin() {
             <p className="text-gray-500">Tidak ada data absensi.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full table-auto border-collapse border border-blue-300">
+              <table className="w-full table-auto border-collapse border border-gray-300">
                 <thead>
-                  <tr className="bg-blue-200 text-blue-900">
+                  <tr className="bg-gray-100 text-gray-800">
                     <th className="border px-4 py-2">Nama</th>
                     <th className="border px-4 py-2">Posisi</th>
                     <th className="border px-4 py-2">Tanggal</th>
@@ -241,26 +240,18 @@ export default function RekapAbsensiAdmin() {
                   {filtered.map(att => (
                     <tr
                       key={att.id}
-                      className={`hover:bg-blue-100 ${
-                        att.status === 'Hadir'
-                          ? 'bg-green-50'
-                          : 'bg-red-50'
-                      }`}
+                      className={`hover:bg-gray-50 ${att.status === 'Hadir' ? 'bg-green-50' : 'bg-red-50'}`}
                     >
-                      <td className="border px-4 py-2">{att.full_name}</td>
-                      <td className="border px-4 py-2">{att.position}</td>
+                      <td className="border px-4 py-2 max-w-xs break-words">{att.full_name}</td>
+                      <td className="border px-4 py-2 max-w-xs break-words">{att.position}</td>
                       <td className="border px-4 py-2">{formatDate(att.attendance_date)}</td>
                       <td className="border px-4 py-2">{att.shift}</td>
                       <td className="border px-4 py-2">{formatDateTime(att.check_in)}</td>
                       <td className="border px-4 py-2">{formatDateTime(att.check_out)}</td>
-                      <td className="border px-4 py-2">
-                        <StatusBadge status={att.status} />
-                      </td>
-                      <td className="border px-4 py-2">
-                        <TerlambatBadge terlambat={att.terlambat} />
-                      </td>
-                      <td className="border px-4 py-2">{formatLocation(att.check_in_location)}</td>
-                      <td className="border px-4 py-2">{formatLocation(att.check_out_location)}</td>
+                      <td className="border px-4 py-2"><StatusBadge status={att.status} /></td>
+                      <td className="border px-4 py-2"><TerlambatBadge terlambat={att.terlambat} /></td>
+                      <td className="border px-4 py-2 max-w-xs break-words">{att.check_in_location || '-'}</td>
+                      <td className="border px-4 py-2 max-w-xs break-words">{att.check_out_location || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
