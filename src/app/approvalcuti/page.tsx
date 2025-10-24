@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -8,21 +8,31 @@ import { QRCodeCanvas } from 'qrcode.react'
 import * as XLSX from 'xlsx'
 import { Loader2, ArrowLeft } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import {
+  ColumnDef,
+  flexRender,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table'
 
+// ======================= TYPES =======================
 type LeaveRequest = {
   id: number
   user_id: string
   leave_type: string
-  leave_days: number
-  half_day: boolean
-  start_date: string
-  end_date: string
-  status: 'Menunggu' | 'Disetujui' | 'Ditolak'
-  annual_leave_cut: boolean
-  profiles?: {
-    full_name: string
-    position: string
-  }
+  leave_days?: number
+  half_day?: boolean
+  start_date?: string
+  end_date?: string
+  status?: 'Menunggu' | 'Disetujui' | 'Ditolak'
+  annual_leave_cut?: boolean
+  address?: string
+  approved_by?: string
+  created_at?: string
+  profiles?: { full_name?: string; position?: string }
 }
 
 type LeaveApproval = {
@@ -35,102 +45,91 @@ type LeaveApproval = {
   qr_code_url: string | null
 }
 
+// ======================= COMPONENT =======================
 export default function ApprovalCutiPage() {
   const router = useRouter()
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([])
   const [approvals, setApprovals] = useState<LeaveApproval[]>([])
   const [approverRole, setApproverRole] = useState<'kasubbag' | 'kepala_kantor'>('kasubbag')
   const [loadingId, setLoadingId] = useState<number | null>(null)
+  const [loadingPage, setLoadingPage] = useState<boolean>(true)
+  const [globalFilter, setGlobalFilter] = useState('')
 
-  // =====================================================
-  // 🔹 Fetch leave requests
+  // ======================= HELPERS =======================
+  const getApprovalRecord = (leaveId: number, level: 1 | 2) =>
+    approvals.find((a) => a.leave_request_id === leaveId && a.level === level) || null
+  const getApprovalStatus = (leaveId: number, level: 1 | 2) => getApprovalRecord(leaveId, level)?.status || 'Menunggu'
+
+  const formatDate = (dateStr?: string | null) => {
+    if (!dateStr) return '-'
+    try {
+      return new Date(dateStr).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+    } catch {
+      return dateStr
+    }
+  }
+
+  // ======================= FETCH =======================
   const fetchLeaveRequests = async () => {
-    const { data, error } = await supabase
-      .from('leave_requests')
-      .select('*, profiles(full_name, position)')
-      .order('created_at', { ascending: false })
-    if (!error && data) setLeaveRequests(data as LeaveRequest[])
+    try {
+      setLoadingPage(true)
+      const { data, error } = await supabase
+        .from('leave_requests')
+        .select('id,user_id,leave_type,leave_days,half_day,start_date,end_date,status,annual_leave_cut,address,approved_by,created_at,profiles(full_name,position)')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      setLeaveRequests(Array.isArray(data) ? (data as LeaveRequest[]) : [])
+    } catch (err) {
+      console.error('Error fetch leave_requests:', err)
+      setLeaveRequests([])
+    } finally {
+      setLoadingPage(false)
+    }
   }
 
-  // 🔹 Fetch approvals
   const fetchApprovals = async () => {
-    const { data, error } = await supabase
-      .from('leave_approvals')
-      .select('*')
-      .order('approved_at', { ascending: false })
-    if (!error && data) setApprovals(data as LeaveApproval[])
+    try {
+      const { data, error } = await supabase.from('leave_approvals').select('*').order('approved_at', { ascending: false })
+      if (error) throw error
+      setApprovals(Array.isArray(data) ? (data as LeaveApproval[]) : [])
+    } catch (err) {
+      console.error('Error fetch leave_approvals:', err)
+      setApprovals([])
+    }
   }
 
-  // =====================================================
-useEffect(() => {
-  const init = async () => {
-    await fetchLeaveRequests()
-    await fetchApprovals()
-  }
-  init()
+  // ======================= EFFECT =======================
+  useEffect(() => {
+    const init = async () => await Promise.all([fetchLeaveRequests(), fetchApprovals()])
+    init()
+    const channel = supabase
+      .channel('realtime-approvals')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'leave_approvals' },
+        async () => await Promise.all([fetchLeaveRequests(), fetchApprovals()])
+      )
+      .subscribe()
+    return () => {
+      // @ts-ignore
+      supabase.removeChannel(channel)
+    }
+  }, [])
 
-  // Realtime subscription
-  const channel = supabase
-    .channel('realtime-approvals')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'leave_approvals' },
-      async () => {
-        await fetchApprovals()
-        await fetchLeaveRequests()
-      }
-    )
-    .subscribe()
-
-  // Cleanup
-  return () => {
-    // @ts-ignore Supabase typing issue
-    supabase.removeChannel(channel)
-  }
-}, [])
-
-
-  // =====================================================
-  const getApprovalStatus = (leaveId: number, level: 1 | 2) => {
-    return approvals.find(a => a.leave_request_id === leaveId && a.level === level)?.status || 'Menunggu'
-  }
-
-  // =====================================================
+  // ======================= APPROVAL =======================
   const insertApproval = async (leave_request_id: number, status: 'Disetujui' | 'Ditolak') => {
     setLoadingId(leave_request_id)
     try {
       const { data: userData } = await supabase.auth.getUser()
       const approver_id = userData.user?.id
       if (!approver_id) return alert('❌ Tidak ditemukan ID pengguna.')
-
       const level = approverRole === 'kasubbag' ? 1 : 2
-
-      // Level 2 hanya bisa approve jika level 1 sudah Disetujui
-      if (level === 2) {
-        const level1 = approvals.find(a => a.leave_request_id === leave_request_id && a.level === 1)
-        if (!level1 || level1.status !== 'Disetujui') {
-          alert('❌ Kepala Kantor hanya dapat menyetujui jika Kasubbag sudah menyetujui.')
-          return
-        }
+      if (level === 2 && getApprovalRecord(leave_request_id, 1)?.status !== 'Disetujui') {
+        return alert('❌ Kepala Kantor hanya dapat menyetujui jika Kasubbag sudah menyetujui.')
       }
+      const existingApproval = getApprovalRecord(leave_request_id, level)
+      const qrValue = level === 2 && status === 'Disetujui' ? `${window.location.origin}/leave/${leave_request_id}` : existingApproval?.qr_code_url || null
 
-      const { data: leaveData, error: leaveError } = await supabase
-        .from('leave_requests')
-        .select('*')
-        .eq('id', leave_request_id)
-        .single()
-      if (leaveError || !leaveData) return alert('❌ Data cuti tidak ditemukan.')
-
-      const leaveDays = Number(leaveData.leave_days || 1)
-      const isHalfDay = leaveData.half_day
-      const annualLeaveCut = leaveData.annual_leave_cut
-
-      const existingApproval = approvals.find(a => a.leave_request_id === leave_request_id && a.level === level)
-      const qrValue = level === 2 && status === 'Disetujui'
-        ? `${window.location.origin}/leave/${leave_request_id}`
-        : existingApproval?.qr_code_url || null
-
-      // Insert atau update approval
       if (existingApproval) {
         await supabase
           .from('leave_approvals')
@@ -138,57 +137,29 @@ useEffect(() => {
           .eq('leave_request_id', leave_request_id)
           .eq('level', level)
       } else {
-        await supabase
-          .from('leave_approvals')
-          .insert([{ leave_request_id, approver_id, level, status, approved_at: new Date().toISOString(), qr_code_url: qrValue }])
+        await supabase.from('leave_approvals').insert([{ leave_request_id, approver_id, level, status, approved_at: new Date().toISOString(), qr_code_url: qrValue }])
       }
 
-      // Update status leave_requests
-      if (status === 'Disetujui' || status === 'Ditolak') {
-        await supabase
-          .from('leave_requests')
-          .update({ status, approved_by: approver_id })
-          .eq('id', leave_request_id)
-      }
-
-      // Update kuota jika Level 2 disetujui & cuti tahunan
-      if (status === 'Disetujui' && level === 2 && annualLeaveCut) {
-        const { data: quotaData } = await supabase
-          .from('master_leave_quota')
-          .select('*')
-          .eq('user_id', leaveData.user_id)
-          .eq('year', new Date().getFullYear())
-          .single()
-        if (quotaData) {
-          const usedLeave = Number(quotaData.used_leave || 0)
-          const deduct = isHalfDay ? leaveDays / 2 : leaveDays
-          await supabase
-            .from('master_leave_quota')
-            .update({ used_leave: usedLeave + deduct })
-            .eq('id', quotaData.id)
-        }
-      }
-
-      alert(`✅ Pengajuan berhasil ${status.toLowerCase()} oleh ${approverRole === 'kasubbag' ? 'Kasubbag' : 'Kepala Kantor'}.`)
-      await fetchApprovals()
-      await fetchLeaveRequests()
+      await supabase.from('leave_requests').update({ status, approved_by: approver_id }).eq('id', leave_request_id)
+      await Promise.all([fetchApprovals(), fetchLeaveRequests()])
     } catch (err) {
-      console.error('❌ Error Supabase:', err)
+      console.error(err)
       alert('❌ Gagal menyimpan persetujuan.')
     } finally {
       setLoadingId(null)
     }
   }
 
-  // =====================================================
+  // ======================= EXPORT EXCEL =======================
   const exportToExcel = () => {
-    const rekap = approvals.filter(a => a.status !== 'Menunggu')
-    const formattedData = rekap.map(r => ({
+    if (!approvals.length) return alert('Belum ada data untuk diekspor.')
+    const rekap = approvals.filter((a) => a.status !== 'Menunggu')
+    const formattedData = rekap.map((r) => ({
       ID: r.id,
       'Leave Request ID': r.leave_request_id,
       Level: r.level,
       Status: r.status,
-      'Tanggal Persetujuan': r.approved_at,
+      'Tanggal Persetujuan': r.approved_at ? new Date(r.approved_at).toISOString() : '-',
       'QR Code URL': r.qr_code_url || '-',
     }))
     const worksheet = XLSX.utils.json_to_sheet(formattedData)
@@ -197,147 +168,222 @@ useEffect(() => {
     XLSX.writeFile(workbook, 'rekap_cuti.xlsx')
   }
 
-  const pendingRequests = leaveRequests.filter(req => getApprovalStatus(req.id, 2) === 'Menunggu')
-  const riwayatRequests = leaveRequests.filter(req => getApprovalStatus(req.id, 2) !== 'Menunggu')
+  // ======================= PRINT =======================
+  const printLeaveRequest = (lr: LeaveRequest, approvalLevel2?: LeaveApproval | null) => {
+    const statusKepala = getApprovalStatus(lr.id, 2)
+    const approvedAt = approvalLevel2?.approved_at || ''
+    const win = window.open('', '_blank')
+    if (!win) return
+    const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Cetak Cuti</title></head><body>
+      <h1>Surat Permohonan Cuti</h1>
+      <p>Nama: ${lr.profiles?.full_name || '-'}</p>
+      <p>Jabatan: ${lr.profiles?.position || '-'}</p>
+      <p>Jenis: ${lr.leave_type}</p>
+      <p>Periode: ${formatDate(lr.start_date)} s/d ${formatDate(lr.end_date)}</p>
+      <p>Status Kepala: ${statusKepala}</p>
+      <p>Tanggal Persetujuan: ${formatDate(approvedAt)}</p>
+    </body></html>`
+    win.document.write(html)
+    win.document.close()
+    setTimeout(() => { win.focus(); win.print() }, 300)
+  }
 
-  // =====================================================
+  // ======================= PENDING & RIWAYAT DATA =======================
+  const pendingRequests = leaveRequests.filter((lr) => getApprovalStatus(lr.id, 2) === 'Menunggu')
+  const riwayatRequests = leaveRequests.filter((lr) => getApprovalStatus(lr.id, 2) !== 'Menunggu')
+  const riwayatData = useMemo(
+    () =>
+      riwayatRequests.map((lr) => {
+        const approvalLevel2 = approvals.find((a) => a.leave_request_id === lr.id && a.level === 2)
+        return {
+          nama: lr.profiles?.full_name || '-',
+          jabatan: lr.profiles?.position || '-',
+          jenis: lr.leave_type || '-',
+          periode: `${formatDate(lr.start_date)} - ${formatDate(lr.end_date)}`,
+          alamat: lr.address || '-',
+          status: getApprovalStatus(lr.id, 2),
+          qr: approvalLevel2?.qr_code_url || null,
+          lr,
+          approvalLevel2,
+        }
+      }),
+    [riwayatRequests, approvals]
+  )
+
+  const columns = useMemo<ColumnDef<typeof riwayatData[0]>[]>(() => [
+    { accessorKey: 'nama', header: 'Nama' },
+    { accessorKey: 'jabatan', header: 'Jabatan' },
+    { accessorKey: 'jenis', header: 'Jenis Cuti' },
+    { accessorKey: 'periode', header: 'Periode' },
+    { accessorKey: 'alamat', header: 'Alamat' },
+    {
+      accessorKey: 'status',
+      header: 'Status',
+      cell: (info) => (
+        <span className={`font-semibold ${
+          (info.getValue() as string) === 'Disetujui' ? 'text-green-600' :
+          (info.getValue() as string) === 'Ditolak' ? 'text-red-600' : 'text-gray-500'}`}>
+          {info.getValue() as string}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'actions',
+      header: 'Aksi',
+      cell: (info) => (
+        <div className="flex items-center gap-2">
+          {info.row.original.qr && <QRCodeCanvas value={info.row.original.qr} size={50} />}
+          <Button size="sm" className="bg-gray-700 hover:bg-gray-800 text-white"
+            onClick={() => printLeaveRequest(info.row.original.lr, info.row.original.approvalLevel2)}>
+            Cetak
+          </Button>
+        </div>
+      ),
+    },
+  ], [])
+
+  const table = useReactTable({
+    data: riwayatData,
+    columns,
+    state: { globalFilter },
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    globalFilterFn: 'includesString',
+  })
+
+  // ======================= RENDER =======================
+  if (loadingPage) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin" /></div>
+
   return (
-    <div className="p-6 space-y-10">
+    <div className="p-6 space-y-8">
       <div className="flex items-center gap-2">
-        <Button
-          onClick={() => router.push('/dashboardadmin')}
-          className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Kembali ke Dashboard
+        <Button onClick={() => router.push('/dashboardadmin')} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white">
+          <ArrowLeft className="w-4 h-4" /> Kembali ke Dashboard
         </Button>
+        <div className="ml-auto flex gap-2">
+          <Button onClick={exportToExcel} className="bg-blue-600 hover:bg-blue-700 text-white">Export Rekap Approvals</Button>
+        </div>
       </div>
 
-      <h1 className="text-2xl font-semibold mb-6">Persetujuan Cuti Pegawai</h1>
+      <h1 className="text-2xl font-semibold">Persetujuan Cuti Pegawai</h1>
 
-      <div className="mb-6 flex gap-4">
-        <Button
-          variant={approverRole === 'kasubbag' ? 'default' : 'outline'}
-          onClick={() => setApproverRole('kasubbag')}
-        >
-          Kasubbag
-        </Button>
-        <Button
-          variant={approverRole === 'kepala_kantor' ? 'default' : 'outline'}
-          onClick={() => setApproverRole('kepala_kantor')}
-        >
-          Kepala Kantor
-        </Button>
-      </div>
-
-      {/* Pending Requests */}
+      {/* ================= PENDING TABLE ================= */}
       <Card className="border shadow-sm">
-        <CardHeader>
-          <CardTitle>Pengajuan Cuti Menunggu Persetujuan</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Daftar Pengajuan (Menunggu Persetujuan)</CardTitle></CardHeader>
         <CardContent>
           {pendingRequests.length === 0 ? (
-            <p className="text-gray-500">Tidak ada pengajuan cuti yang menunggu.</p>
+            <p className="text-gray-500">Tidak ada pengajuan yang menunggu level-2.</p>
           ) : (
-            <div className="space-y-3">
-              {pendingRequests.map(req => {
-                const statusKasubbag = getApprovalStatus(req.id, 1)
-                const statusKepala = getApprovalStatus(req.id, 2)
-                const disabledKasubbag = approverRole === 'kasubbag' && statusKasubbag !== 'Menunggu'
-                const disabledKepala = approverRole === 'kepala_kantor' && statusKepala !== 'Menunggu'
-                const disabled = disabledKasubbag || disabledKepala
+            <div className="overflow-x-auto">
+              <table className="w-full table-auto border-collapse">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="border px-3 py-2 text-left">Nama</th>
+                    <th className="border px-3 py-2 text-left">Jabatan</th>
+                    <th className="border px-3 py-2 text-left">Jenis Cuti</th>
+                    <th className="border px-3 py-2 text-left">Periode</th>
+                    <th className="border px-3 py-2 text-left">Alamat</th>
+                    <th className="border px-3 py-2 text-left">Kasubbag</th>
+                    <th className="border px-3 py-2 text-left">Kepala Kantor</th>
+                    <th className="border px-3 py-2 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingRequests.map((req) => {
+                    const kasubStatus = getApprovalStatus(req.id, 1)
+                    const kepalaStatus = getApprovalStatus(req.id, 2)
+                    const disabledForCurrent =
+                      (approverRole === 'kasubbag' && kasubStatus !== 'Menunggu') ||
+                      (approverRole === 'kepala_kantor' && (kasubStatus !== 'Disetujui' || kepalaStatus !== 'Menunggu'))
 
-                return (
-                  <div
-                    key={req.id}
-                    className="flex items-center justify-between border p-4 rounded-xl bg-gray-50 hover:bg-gray-100 transition"
-                  >
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-gray-800">{req.profiles?.full_name}</span>
-                      <span className="text-sm text-gray-600">{req.profiles?.position}</span> {/* ✅ posisi */}
-                      <span className="text-sm text-gray-600">
-                        {req.leave_type} ({req.start_date} - {req.end_date})
-                      </span>
-                      <span className="text-sm text-gray-500">
-                        Kasubbag: {statusKasubbag} | Kepala Kantor: {statusKepala}
-                      </span>
-                    </div>
-
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        disabled={disabled || loadingId === req.id}
-                        onClick={() => insertApproval(req.id, 'Disetujui')}
-                        className="bg-green-600 hover:bg-green-700 text-white"
-                      >
-                        {loadingId === req.id ? <Loader2 className="animate-spin h-4 w-4" /> : 'Setujui'}
-                      </Button>
-                      <Button
-                        size="sm"
-                        disabled={disabled || loadingId === req.id}
-                        onClick={() => insertApproval(req.id, 'Ditolak')}
-                        className="bg-red-600 hover:bg-red-700 text-white"
-                      >
-                        {loadingId === req.id ? <Loader2 className="animate-spin h-4 w-4" /> : 'Tolak'}
-                      </Button>
-                    </div>
-                  </div>
-                )
-              })}
+                    return (
+                      <tr key={req.id} className="hover:bg-gray-50">
+                        <td className="border px-3 py-2">{req.profiles?.full_name || '-'}</td>
+                        <td className="border px-3 py-2">{req.profiles?.position || '-'}</td>
+                        <td className="border px-3 py-2">{req.leave_type || '-'}</td>
+                        <td className="border px-3 py-2">{formatDate(req.start_date)} - {formatDate(req.end_date)}</td>
+                        <td className="border px-3 py-2">{req.address || '-'}</td>
+                        <td className="border px-3 py-2">{kasubStatus}</td>
+                        <td className="border px-3 py-2">{kepalaStatus}</td>
+                        <td className="border px-3 py-2 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <Button size="sm" disabled={disabledForCurrent || loadingId === req.id} onClick={() => insertApproval(req.id, 'Disetujui')} className="bg-green-600 hover:bg-green-700 text-white">
+                              {loadingId === req.id ? <Loader2 className="animate-spin h-4 w-4" /> : 'Setujui'}
+                            </Button>
+                            <Button size="sm" disabled={disabledForCurrent || loadingId === req.id} onClick={() => insertApproval(req.id, 'Ditolak')} className="bg-red-600 hover:bg-red-700 text-white">
+                              {loadingId === req.id ? <Loader2 className="animate-spin h-4 w-4" /> : 'Tolak'}
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Riwayat Requests */}
+      {/* ================= RIWAYAT TABLE ================= */}
       <Card className="border shadow-sm">
-        <CardHeader className="flex justify-between items-center">
+        <CardHeader>
           <CardTitle>Riwayat Persetujuan Cuti</CardTitle>
-          <Button onClick={exportToExcel} className="bg-blue-600 hover:bg-blue-700 text-white">
-            Export Excel
-          </Button>
+          <div className="mt-2">
+            <input
+              type="text"
+              placeholder="Cari..."
+              value={globalFilter ?? ''}
+              onChange={(e) => setGlobalFilter(e.target.value)}
+              className="border p-2 rounded w-full"
+            />
+          </div>
         </CardHeader>
         <CardContent>
-          {riwayatRequests.length === 0 ? (
-            <p className="text-gray-500">Belum ada riwayat persetujuan cuti.</p>
-          ) : (
-            <div className="space-y-3">
-              {riwayatRequests.map(req => {
-                const statusKepala = getApprovalStatus(req.id, 2)
-                const approval = approvals.find(a => a.leave_request_id === req.id && a.level === 2)
+          <div className="overflow-x-auto">
+            <table className="min-w-full table-auto border-collapse">
+              <thead className="bg-gray-100">
+                {table.getHeaderGroups().map((headerGroup) => (
+                  <tr key={headerGroup.id}>
+                    {headerGroup.headers.map((header) => (
+                      <th key={header.id} className="border px-3 py-2 text-left cursor-pointer" onClick={header.column.getToggleSortingHandler()}>
+                        {flexRender(header.column.columnDef.header, header.getContext())}
+                        {{
+                          asc: ' 🔼',
+                          desc: ' 🔽',
+                        }[header.column.getIsSorted() as string] ?? null}
+                      </th>
+                    ))}
+                  </tr>
+                ))}
+              </thead>
+              <tbody>
+                {table.getRowModel().rows.map((row) => (
+                  <tr key={row.id} className="hover:bg-gray-50">
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id} className="border px-3 py-2">{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-                return (
-                  <div
-                    key={req.id}
-                    className="flex items-center justify-between border p-4 rounded-xl bg-white shadow-sm"
-                  >
-                    <div className="flex flex-col">
-                      <p className="font-medium text-gray-800">{req.profiles?.full_name}</p>
-                      <p className="text-sm text-gray-600">{req.profiles?.position}</p> {/* ✅ posisi */}
-                      <p className="text-sm text-gray-600">
-                        {req.leave_type} ({req.start_date} - {req.end_date})
-                      </p>
-                      <p
-                        className={`text-sm font-semibold ${
-                          statusKepala === 'Disetujui'
-                            ? 'text-green-600'
-                            : statusKepala === 'Ditolak'
-                            ? 'text-red-600'
-                            : 'text-gray-500'
-                        }`}
-                      >
-                        {statusKepala}
-                      </p>
-                    </div>
-
-                    {statusKepala === 'Disetujui' && approval?.qr_code_url && (
-                      <QRCodeCanvas value={approval.qr_code_url} size={80} />
-                    )}
-                  </div>
-                )
-              })}
+          <div className="flex items-center justify-between gap-2 mt-3">
+            <div>
+              <Button size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
+                {'<'}
+              </Button>
+              <Button size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} className="ml-2">
+                {'>'}
+              </Button>
             </div>
-          )}
+            <span>
+              Halaman {table.getState().pagination.pageIndex + 1} dari {table.getPageCount()}
+            </span>
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -4,12 +4,15 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import toast, { Toaster } from 'react-hot-toast'
+import dayjs from 'dayjs'
 
 const StatusBadge = ({ status }: { status: string }) => {
   const styles =
-    status === 'Hadir'
+    status === 'Tepat Waktu'
       ? 'bg-green-100 text-green-800'
-      : 'bg-gray-100 text-gray-800'
+      : status === 'Terlambat'
+      ? 'bg-yellow-100 text-yellow-800'
+      : 'bg-red-100 text-red-800'
 
   return (
     <div className={`px-3 py-1 text-sm font-medium rounded-md ${styles}`}>
@@ -44,6 +47,7 @@ export default function RekapAbsensiPage() {
           id,
           attendance_date,
           shift,
+          shift_start,
           check_in,
           check_in_location,
           check_in_latitude,
@@ -71,10 +75,21 @@ export default function RekapAbsensiPage() {
         return
       }
 
-      const processed = (data || []).map((att) => ({
-        ...att,
-        computedStatus: att.check_in ? 'Hadir' : 'Tidak Hadir',
-      }))
+      // Hitung status berdasarkan jam masuk dan shift_start
+      const processed = (data || []).map((att) => {
+        if (!att.check_in) return { ...att, computedStatus: 'Tidak Hadir' }
+
+        const shiftStart = dayjs(att.shift_start)
+        const checkIn = dayjs(att.check_in)
+        const toleranceMinutes = 10
+        const limit = shiftStart.add(toleranceMinutes, 'minute')
+
+        const computedStatus = checkIn.isAfter(limit)
+          ? 'Terlambat'
+          : 'Tepat Waktu'
+
+        return { ...att, computedStatus }
+      })
 
       setAttendances(processed)
       setLoading(false)
@@ -83,13 +98,17 @@ export default function RekapAbsensiPage() {
     fetchData()
   }, [startDate, endDate])
 
+  // 🔢 Statistik Kehadiran
   const stats = useMemo(() => {
     const uniqueDates = new Set(attendances.map((a) => a.attendance_date))
-    const counts = { Hadir: 0, 'Tidak Hadir': 0 }
+    const counts = { TepatWaktu: 0, Terlambat: 0, TidakHadir: 0 }
+
     attendances.forEach((a) => {
-      if (a.computedStatus === 'Hadir') counts.Hadir++
-      else counts['Tidak Hadir']++
+      if (a.computedStatus === 'Tepat Waktu') counts.TepatWaktu++
+      else if (a.computedStatus === 'Terlambat') counts.Terlambat++
+      else counts.TidakHadir++
     })
+
     return { ...counts, totalHari: uniqueDates.size }
   }, [attendances])
 
@@ -132,6 +151,7 @@ export default function RekapAbsensiPage() {
       </header>
 
       <main className="p-4 max-w-lg mx-auto">
+        {/* Filter */}
         <section className="bg-white rounded-lg shadow p-4 mb-5">
           <h2 className="text-gray-500 font-semibold mb-3 text-sm">Filter Periode</h2>
           <div className="grid grid-cols-2 gap-4">
@@ -148,15 +168,18 @@ export default function RekapAbsensiPage() {
           </div>
         </section>
 
+        {/* Statistik Kehadiran */}
         <section className="bg-green-50 border border-green-200 rounded-lg shadow p-4 mb-6">
           <h2 className="text-lg font-bold text-gray-800 mb-4">Statistik Kehadiran</h2>
           <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-gray-700">
             <div className="flex justify-between"><span>Total Hari</span><span className="font-semibold">{stats.totalHari}</span></div>
-            <div className="flex justify-between"><span>Hadir</span><span className="font-semibold">{stats.Hadir}</span></div>
-            <div className="flex justify-between"><span>Tidak Hadir</span><span className="font-semibold">{stats['Tidak Hadir']}</span></div>
+            <div className="flex justify-between"><span>Tepat Waktu</span><span className="font-semibold text-green-600">{stats.TepatWaktu}</span></div>
+            <div className="flex justify-between"><span>Terlambat</span><span className="font-semibold text-yellow-600">{stats.Terlambat}</span></div>
+            <div className="flex justify-between"><span>Tidak Hadir</span><span className="font-semibold text-red-600">{stats.TidakHadir}</span></div>
           </div>
         </section>
 
+        {/* Riwayat Absensi */}
         <section>
           <h2 className="text-lg font-bold text-gray-800 mb-4">Riwayat Absensi</h2>
           {loading ? (
@@ -196,6 +219,7 @@ export default function RekapAbsensiPage() {
           )}
         </section>
 
+        {/* Tombol Kembali */}
         {mounted && (
           <div className="mt-8 pb-4">
             <button onClick={() => router.push('/dashboard')}
