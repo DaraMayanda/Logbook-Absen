@@ -12,6 +12,7 @@ type LeaveRequest = {
   start_date: string
   end_date: string
   reason: string
+  address: string
   status: string
   created_at: string
   half_day: boolean
@@ -28,6 +29,7 @@ export default function PengajuanCutiPage() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [reason, setReason] = useState('')
+  const [address, setAddress] = useState('')
   const [halfDay, setHalfDay] = useState(false)
   const [halfDayShift, setHalfDayShift] = useState<'pagi' | 'siang' | ''>('')
   const [annualLeaveCut, setAnnualLeaveCut] = useState(true)
@@ -37,7 +39,7 @@ export default function PengajuanCutiPage() {
 
   useEffect(() => setMounted(true), [])
 
-  // Ambil user dan kuota tahunan
+  // ================= AMBIL USER & KUOTA =================
   useEffect(() => {
     if (!mounted) return
     const fetchUserAndQuota = async () => {
@@ -64,7 +66,7 @@ export default function PengajuanCutiPage() {
     fetchUserAndQuota()
   }, [mounted, router])
 
-  // Ambil riwayat pengajuan dan update sisa cuti
+  // ================= FETCH RIWAYAT & UPDATE KUOTA =================
   const fetchLeaveRequests = async () => {
     if (!userId) return
 
@@ -98,7 +100,7 @@ export default function PengajuanCutiPage() {
     await updateLeaveQuotaIfApproved()
   }
 
-  // Update kuota cuti jika ada approved level 2
+  // ================= UPDATE KUOTA OTOMATIS =================
   const updateLeaveQuotaIfApproved = async () => {
     if (!userId) return
     const currentYear = new Date().getFullYear()
@@ -133,11 +135,31 @@ export default function PengajuanCutiPage() {
     setLeaveBalance(quota.annual_quota - totalUsed)
   }
 
+  // ================= LISTEN REALTIME =================
+  useEffect(() => {
+    if (!userId) return
+    const channel = supabase
+      .channel('realtime-leave-approval')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'leave_approvals', filter: `status=eq.approved` },
+        () => fetchLeaveRequests()
+      )
+      .subscribe()
+
+    return () => {
+      // @ts-ignore
+      supabase.removeChannel(channel)
+    }
+  }, [userId])
+
   useEffect(() => { fetchLeaveRequests() }, [userId])
 
+  // ================= SUBMIT =================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!leaveType || !startDate || !endDate || !reason) return toast.error('Semua field wajib diisi')
+    if (!leaveType || !startDate || !endDate || !reason || !address)
+      return toast.error('Semua field wajib diisi')
     if (!userId) return toast.error('User belum terdeteksi')
 
     const diffDays = halfDay
@@ -155,6 +177,7 @@ export default function PengajuanCutiPage() {
       p_start_date: startDate,
       p_end_date: endDate,
       p_reason: reason,
+      p_address: address,
       p_half_day: halfDay,
       p_half_day_shift: halfDayShift || null,
       p_annual_leave_cut: annualLeaveCut,
@@ -163,7 +186,7 @@ export default function PengajuanCutiPage() {
     if (error) toast.error(`Gagal submit: ${error.message}`)
     else {
       toast.success(data?.[0]?.message || 'Pengajuan berhasil dikirim')
-      setLeaveType(''); setStartDate(''); setEndDate(''); setReason('')
+      setLeaveType(''); setStartDate(''); setEndDate(''); setReason(''); setAddress('')
       setHalfDay(false); setHalfDayShift('')
       fetchLeaveRequests()
     }
@@ -205,7 +228,12 @@ export default function PengajuanCutiPage() {
         </div>
 
         <div>
-          <label>Alasan</label>
+          <label>Alamat selama cuti</label>
+          <textarea className="w-full border p-2 rounded" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Tuliskan alamat selama cuti..." />
+        </div>
+
+        <div>
+          <label>Alasan cuti</label>
           <textarea className="w-full border p-2 rounded" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Tuliskan alasan cuti..." />
         </div>
 
@@ -257,6 +285,8 @@ export default function PengajuanCutiPage() {
                     {lr.leave_type} ({lr.leave_days} hari) {lr.half_day ? `- Setengah Hari (${lr.half_day_shift})` : ''}
                   </p>
                   <p>{lr.start_date} s/d {lr.end_date}</p>
+                  <p>Alamat: {lr.address}</p>
+                  <p>Alasan: {lr.reason}</p>
                 </div>
                 <span className={`px-2 py-1 rounded-full ${
                   lr.status === 'Disetujui' ? 'bg-green-200 text-green-800' :
