@@ -150,10 +150,12 @@ export default function ApprovalCutiPage() {
         return alert('❌ Kepala Kantor hanya dapat menyetujui jika Kasubbag sudah menyetujui.')
       }
 
-      const domain = window.location.origin
-      const qrValue = level === 2 && status === 'Disetujui'
-        ? `${domain}/leave/${leave_request_id}`
-        : existingApproval?.qr_code_url || null
+      const domain = process.env.NEXT_PUBLIC_BASE_URL || 'https://logbook-absen.vercel.app'
+
+const qrValue =
+  level === 2 && status === 'Disetujui'
+    ? `${domain}/leave/${leave_request_id}`
+    : existingApproval?.qr_code_url || null
 
       if (existingApproval) {
         await supabase
