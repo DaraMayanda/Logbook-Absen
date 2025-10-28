@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { QRCodeCanvas } from 'qrcode.react'
 import * as XLSX from 'xlsx'
-import { Loader2, ArrowLeft } from 'lucide-react'
+import { Loader2, ArrowLeft, Search } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import {
   ColumnDef,
@@ -29,7 +29,7 @@ type LeaveRequest = {
   address?: string
   approved_by?: string
   created_at?: string
-  profiles?: { full_name?: string; position?: string }
+  profiles?: { full_name?: string; position?: string } | null
 }
 
 type LeaveApproval = {
@@ -56,9 +56,6 @@ export default function ApprovalCutiPage() {
   const getApprovalRecord = (leaveId: number, level: 1 | 2) =>
     approvals.find((a) => a.leave_request_id === leaveId && a.level === level) || null
 
-  const getApprovalStatus = (leaveId: number, level: 1 | 2) =>
-    getApprovalRecord(leaveId, level)?.status || 'Menunggu'
-
   const formatDate = (dateStr?: string | null) => {
     if (!dateStr) return '-'
     try {
@@ -82,15 +79,11 @@ export default function ApprovalCutiPage() {
       if (error) throw error
 
       const safeData = Array.isArray(data)
-        ? data.map((d: any) => ({
-            ...d,
-            profiles: Array.isArray(d.profiles) ? d.profiles[0] : d.profiles,
-          }))
+        ? data.map((d: any) => ({ ...d, profiles: Array.isArray(d.profiles) ? d.profiles[0] : d.profiles }))
         : []
 
       setLeaveRequests(safeData as LeaveRequest[])
-    } catch (err) {
-      console.error('Error fetch leave_requests:', err)
+    } catch {
       setLeaveRequests([])
     } finally {
       setLoadingPage(false)
@@ -105,8 +98,7 @@ export default function ApprovalCutiPage() {
         .order('approved_at', { ascending: false })
       if (error) throw error
       setApprovals(Array.isArray(data) ? data : [])
-    } catch (err) {
-      console.error('Error fetch leave_approvals:', err)
+    } catch {
       setApprovals([])
     }
   }
@@ -116,31 +108,24 @@ export default function ApprovalCutiPage() {
       const { data: userData } = await supabase.auth.getUser()
       const email = userData.user?.email
       if (!email) return
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('email', email)
-        .single()
+      const { data: profile } = await supabase.from('profiles').select('role').eq('email', email).single()
       if (profile?.role === 'kasubbag') setApproverRole('kasubbag')
       else if (profile?.role === 'kepala_kantor') setApproverRole('kepala_kantor')
-      console.log('🧩 Role from profile:', profile?.role)
-    } catch (err) {
-      console.error('Error fetchApproverRole:', err)
-    }
+    } catch {}
   }
 
   // ======================= EFFECT =======================
   useEffect(() => {
     const init = async () => await Promise.all([fetchLeaveRequests(), fetchApprovals(), fetchApproverRole()])
     init()
+
     const channel = supabase
       .channel('realtime-approvals')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'leave_approvals' },
-        async () => await Promise.all([fetchLeaveRequests(), fetchApprovals()])
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_approvals' }, async () => {
+        await Promise.all([fetchLeaveRequests(), fetchApprovals()])
+      })
       .subscribe()
+
     return () => {
       // @ts-ignore
       supabase.removeChannel(channel)
@@ -151,59 +136,49 @@ export default function ApprovalCutiPage() {
   const insertApproval = async (leave_request_id: number, status: 'Disetujui' | 'Ditolak') => {
     if (!approverRole) return alert('Role belum ditentukan.')
     setLoadingId(leave_request_id)
+
     try {
       const { data: userData } = await supabase.auth.getUser()
       const approver_id = userData.user?.id
       if (!approver_id) return alert('❌ Tidak ditemukan ID pengguna.')
 
       const level = approverRole === 'kasubbag' ? 1 : 2
-      const kasubApproval = getApprovalRecord(leave_request_id, 1)
+      const existingApproval = getApprovalRecord(leave_request_id, level)
+      const level1Approval = getApprovalRecord(leave_request_id, 1)
 
-      if (level === 2 && kasubApproval?.status !== 'Disetujui') {
+      if (level === 2 && level1Approval?.status !== 'Disetujui') {
         return alert('❌ Kepala Kantor hanya dapat menyetujui jika Kasubbag sudah menyetujui.')
       }
 
-      const existing = getApprovalRecord(leave_request_id, level)
-      const qrValue =
-        level === 2 && status === 'Disetujui'
-          ? `${window.location.origin}/leave/${leave_request_id}`
-          : existing?.qr_code_url || null
+      const domain = window.location.origin
+      const qrValue = level === 2 && status === 'Disetujui'
+        ? `${domain}/leave/${leave_request_id}`
+        : existingApproval?.qr_code_url || null
 
-      if (existing) {
+      if (existingApproval) {
         await supabase
           .from('leave_approvals')
-          .update({
-            status,
-            approver_id,
-            approved_at: new Date().toISOString(),
-            qr_code_url: qrValue,
-          })
+          .update({ status, approver_id, approved_at: new Date().toISOString(), qr_code_url: qrValue })
           .eq('leave_request_id', leave_request_id)
           .eq('level', level)
       } else {
-        await supabase.from('leave_approvals').insert([
-          {
-            leave_request_id,
-            approver_id,
-            level,
-            status,
-            approved_at: new Date().toISOString(),
-            qr_code_url: qrValue,
-          },
-        ])
+        await supabase.from('leave_approvals').insert([{
+          leave_request_id,
+          approver_id,
+          level,
+          status,
+          approved_at: new Date().toISOString(),
+          qr_code_url: qrValue,
+        }])
       }
 
-      // ⚡ Update status hanya untuk Kepala Kantor
-      if (level === 2) {
-        await supabase
-          .from('leave_requests')
-          .update({ status, approved_by: approver_id })
-          .eq('id', leave_request_id)
+      // Update leave_requests hanya level 2
+      if (level === 2 && status === 'Disetujui') {
+        await supabase.from('leave_requests').update({ status, approved_by: approver_id }).eq('id', leave_request_id)
       }
 
       await Promise.all([fetchApprovals(), fetchLeaveRequests()])
-    } catch (err) {
-      console.error(err)
+    } catch {
       alert('❌ Gagal menyimpan persetujuan.')
     } finally {
       setLoadingId(null)
@@ -228,43 +203,18 @@ export default function ApprovalCutiPage() {
     XLSX.writeFile(workbook, 'rekap_cuti.xlsx')
   }
 
-  // ======================= PRINT =======================
-  const printLeaveRequest = (lr: LeaveRequest, approvalLevel2?: LeaveApproval | null) => {
-    const statusKepala = getApprovalStatus(lr.id, 2)
-    const approvedAt = approvalLevel2?.approved_at || ''
-    const win = window.open('', '_blank')
-    if (!win) return
-    const html = `
-      <html><head><title>Cetak Cuti</title></head><body>
-      <h1>Surat Permohonan Cuti</h1>
-      <p>Nama: ${lr.profiles?.full_name || '-'}</p>
-      <p>Jabatan: ${lr.profiles?.position || '-'}</p>
-      <p>Jenis Cuti: ${lr.leave_type}</p>
-      <p>Periode: ${formatDate(lr.start_date)} s/d ${formatDate(lr.end_date)}</p>
-      <p>Status Kepala Kantor: ${statusKepala}</p>
-      <p>Tanggal Persetujuan: ${formatDate(approvedAt)}</p>
-      </body></html>`
-    win.document.write(html)
-    win.document.close()
-    setTimeout(() => {
-      win.print()
-      win.close()
-    }, 300)
-  }
-
-  // ======================= FILTER DATA SESUAI ROLE =======================
+  // ======================= FILTER DATA =======================
   const pendingRequests = useMemo(() => {
-    if (approverRole === 'kasubbag') {
-      return leaveRequests.filter((lr) => !getApprovalRecord(lr.id, 1)) // belum ada approval level 1
-    }
-    if (approverRole === 'kepala_kantor') {
-      return leaveRequests.filter((lr) => {
-        const kasubbagApproval = getApprovalRecord(lr.id, 1)
-        const kepalaApproval = getApprovalRecord(lr.id, 2)
-        return kasubbagApproval?.status === 'Disetujui' && (!kepalaApproval || kepalaApproval.status === 'Menunggu')
-      })
-    }
-    return []
+    if (!approverRole) return []
+    return leaveRequests.filter((lr) => {
+      const level1Approval = getApprovalRecord(lr.id, 1)
+      const level2Approval = getApprovalRecord(lr.id, 2)
+
+      if (approverRole === 'kasubbag') return !level1Approval || level1Approval.status === 'Menunggu'
+      if (approverRole === 'kepala_kantor')
+        return level1Approval?.status === 'Disetujui' && (!level2Approval || level2Approval.status === 'Menunggu')
+      return false
+    })
   }, [leaveRequests, approvals, approverRole])
 
   const riwayatRequests = useMemo(
@@ -284,8 +234,6 @@ export default function ApprovalCutiPage() {
           alamat: lr.address || '-',
           status: lr.status || 'Menunggu',
           qr: approvalLevel2?.qr_code_url || null,
-          lr,
-          approvalLevel2,
         }
       }),
     [riwayatRequests, approvals]
@@ -304,11 +252,7 @@ export default function ApprovalCutiPage() {
       cell: (info) => (
         <span
           className={`font-semibold ${
-            info.getValue() === 'Disetujui'
-              ? 'text-green-600'
-              : info.getValue() === 'Ditolak'
-              ? 'text-red-600'
-              : 'text-gray-500'
+            info.getValue() === 'Disetujui' ? 'text-green-600' : info.getValue() === 'Ditolak' ? 'text-red-600' : 'text-gray-500'
           }`}
         >
           {info.getValue() as string}
@@ -316,18 +260,15 @@ export default function ApprovalCutiPage() {
       ),
     },
     {
-      accessorKey: 'actions',
-      header: 'Aksi',
+      accessorKey: 'qr',
+      header: 'QR Code',
       cell: (info) => (
-        <div className="flex items-center gap-2">
-          {info.row.original.qr && <QRCodeCanvas value={info.row.original.qr} size={50} />}
-          <Button
-            size="sm"
-            className="bg-gray-700 hover:bg-gray-800 text-white"
-            onClick={() => printLeaveRequest(info.row.original.lr, info.row.original.approvalLevel2)}
-          >
-            Cetak
-          </Button>
+        <div className="flex justify-center items-center">
+          {info.getValue() ? (
+            <QRCodeCanvas value={info.getValue() as string} size={70} className="border rounded-lg shadow-sm" />
+          ) : (
+            <span className="text-gray-400">-</span>
+          )}
         </div>
       ),
     },
@@ -353,7 +294,7 @@ export default function ApprovalCutiPage() {
     )
 
   return (
-    <div className="p-6 space-y-8">
+    <div className="p-6 space-y-8 text-[17px]">
       <div className="flex items-center gap-2">
         <Button
           onClick={() => router.push('/dashboardadmin')}
@@ -362,16 +303,13 @@ export default function ApprovalCutiPage() {
           <ArrowLeft className="w-4 h-4" /> Kembali ke Dashboard
         </Button>
         <div className="ml-auto flex gap-2">
-          <Button
-            onClick={exportToExcel}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
+          <Button onClick={exportToExcel} className="bg-blue-600 hover:bg-blue-700 text-white">
             Export Rekap Approvals
           </Button>
         </div>
       </div>
 
-      <h1 className="text-2xl font-semibold">
+      <h1 className="text-3xl font-bold mt-2">
         Persetujuan Cuti Pegawai ({approverRole === 'kasubbag' ? 'Kasubbag' : 'Kepala Kantor'})
       </h1>
 
@@ -385,7 +323,7 @@ export default function ApprovalCutiPage() {
             <p className="text-gray-500">Tidak ada pengajuan menunggu persetujuan.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full table-auto border-collapse">
+              <table className="w-full table-auto border-collapse text-[16px]">
                 <thead className="bg-gray-100">
                   <tr>
                     <th className="border px-3 py-2">Nama</th>
@@ -399,8 +337,8 @@ export default function ApprovalCutiPage() {
                 <tbody>
                   {pendingRequests.map((req) => (
                     <tr key={req.id} className="hover:bg-gray-50">
-                      <td className="border px-3 py-2">{req.profiles?.full_name}</td>
-                      <td className="border px-3 py-2">{req.profiles?.position}</td>
+                      <td className="border px-3 py-2">{req.profiles?.full_name || '-'}</td>
+                      <td className="border px-3 py-2">{req.profiles?.position || '-'}</td>
                       <td className="border px-3 py-2">{req.leave_type}</td>
                       <td className="border px-3 py-2">
                         {formatDate(req.start_date)} - {formatDate(req.end_date)}
@@ -414,11 +352,7 @@ export default function ApprovalCutiPage() {
                             onClick={() => insertApproval(req.id, 'Disetujui')}
                             className="bg-green-600 hover:bg-green-700 text-white"
                           >
-                            {loadingId === req.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              'Setujui'
-                            )}
+                            {loadingId === req.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Setujui'}
                           </Button>
                           <Button
                             size="sm"
@@ -426,11 +360,7 @@ export default function ApprovalCutiPage() {
                             onClick={() => insertApproval(req.id, 'Ditolak')}
                             className="bg-red-600 hover:bg-red-700 text-white"
                           >
-                            {loadingId === req.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              'Tolak'
-                            )}
+                            {loadingId === req.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Tolak'}
                           </Button>
                         </div>
                       </td>
@@ -446,14 +376,26 @@ export default function ApprovalCutiPage() {
       {/* ================= RIWAYAT TABLE ================= */}
       <Card className="border shadow-sm">
         <CardHeader>
-          <CardTitle>Riwayat Persetujuan Cuti</CardTitle>
+          <CardTitle className="mb-3 text-lg font-semibold">Riwayat Persetujuan Cuti</CardTitle>
+
+          <div className="relative w-full sm:w-80">
+            <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Cari nama, jabatan, atau tipe cuti..."
+              value={globalFilter ?? ''}
+              onChange={(e) => setGlobalFilter(e.target.value)}
+              className="pl-10 pr-3 py-2 border rounded-lg w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
         </CardHeader>
+
         <CardContent>
           {riwayatData.length === 0 ? (
             <p className="text-gray-500">Belum ada riwayat cuti.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full table-auto border-collapse">
+              <table className="w-full table-auto border-collapse text-[16px]">
                 <thead className="bg-gray-100">
                   <tr>
                     {table.getHeaderGroups().map((headerGroup) =>
@@ -469,7 +411,7 @@ export default function ApprovalCutiPage() {
                   {table.getRowModel().rows.map((row) => (
                     <tr key={row.id} className="hover:bg-gray-50">
                       {row.getVisibleCells().map((cell) => (
-                        <td key={cell.id} className="border px-3 py-2">
+                        <td key={cell.id} className="border px-3 py-2 align-middle text-center">
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </td>
                       ))}

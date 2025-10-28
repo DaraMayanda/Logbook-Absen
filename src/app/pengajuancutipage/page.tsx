@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import toast, { Toaster } from 'react-hot-toast'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 
 type LeaveRequest = {
   id: number
@@ -34,12 +35,13 @@ export default function PengajuanCutiPage() {
   const [halfDayShift, setHalfDayShift] = useState<'pagi' | 'siang' | ''>('')
   const [annualLeaveCut, setAnnualLeaveCut] = useState(true)
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([])
+  const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [leaveBalance, setLeaveBalance] = useState<number | null>(null)
 
   useEffect(() => setMounted(true), [])
 
-  // ================= AMBIL USER & KUOTA =================
+  // =================== AMBIL USER & KUOTA ===================
   useEffect(() => {
     if (!mounted) return
     const fetchUserAndQuota = async () => {
@@ -61,15 +63,16 @@ export default function PengajuanCutiPage() {
           .insert({ user_id: user.id, year: currentYear, annual_quota: 12, used_leave: 0 })
         if (insertError) toast.error('Gagal membuat kuota tahunan')
         else setLeaveBalance(12)
-      } else if (quotaData) setLeaveBalance(quotaData.annual_quota - quotaData.used_leave)
+      } else if (quotaData) {
+        setLeaveBalance(quotaData.annual_quota - quotaData.used_leave)
+      }
     }
     fetchUserAndQuota()
   }, [mounted, router])
 
-  // ================= FETCH RIWAYAT & UPDATE KUOTA =================
+  // =================== FETCH RIWAYAT ===================
   const fetchLeaveRequests = async () => {
     if (!userId) return
-
     const { data: requests } = await supabase
       .from('leave_requests')
       .select('*')
@@ -97,65 +100,11 @@ export default function PengajuanCutiPage() {
     })
 
     setLeaveRequests(merged)
-    await updateLeaveQuotaIfApproved()
   }
-
-  // ================= UPDATE KUOTA OTOMATIS =================
-  const updateLeaveQuotaIfApproved = async () => {
-    if (!userId) return
-    const currentYear = new Date().getFullYear()
-
-    const { data: approvedLeaves } = await supabase
-      .from('leave_requests')
-      .select('leave_days, half_day')
-      .eq('user_id', userId)
-      .eq('leave_type', 'Cuti Tahunan')
-      .eq('annual_leave_cut', true)
-      .eq('status', 'Disetujui')
-
-    if (!approvedLeaves || approvedLeaves.length === 0) return
-
-    const totalUsed = approvedLeaves.reduce((sum, lr) => sum + lr.leave_days, 0)
-
-    const { data: quota } = await supabase
-      .from('master_leave_quota')
-      .select('annual_quota')
-      .eq('user_id', userId)
-      .eq('year', currentYear)
-      .single()
-
-    if (!quota) return
-
-    await supabase
-      .from('master_leave_quota')
-      .update({ used_leave: totalUsed })
-      .eq('user_id', userId)
-      .eq('year', currentYear)
-
-    setLeaveBalance(quota.annual_quota - totalUsed)
-  }
-
-  // ================= LISTEN REALTIME =================
-  useEffect(() => {
-    if (!userId) return
-    const channel = supabase
-      .channel('realtime-leave-approval')
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'leave_approvals', filter: `status=eq.approved` },
-        () => fetchLeaveRequests()
-      )
-      .subscribe()
-
-    return () => {
-      // @ts-ignore
-      supabase.removeChannel(channel)
-    }
-  }, [userId])
 
   useEffect(() => { fetchLeaveRequests() }, [userId])
 
-  // ================= SUBMIT =================
+  // =================== SUBMIT PENGAJUAN ===================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!leaveType || !startDate || !endDate || !reason || !address)
@@ -171,6 +120,19 @@ export default function PengajuanCutiPage() {
     }
 
     setLoading(true)
+
+    // ===== CEK DUPLIKAT / OVERLAP LEVEL 1 =====
+    const overlap = leaveRequests
+      .filter(lr => lr.status === 'Menunggu Persetujuan Kepala')
+      .some(lr => (new Date(startDate) <= new Date(lr.end_date)) && (new Date(endDate) >= new Date(lr.start_date)))
+
+    if (overlap) {
+      toast.error('❌ Anda masih punya pengajuan Level 1 aktif yang overlap dengan tanggal ini.')
+      setLoading(false)
+      return
+    }
+
+    // ===== SUBMIT KE DB =====
     const { data, error } = await supabase.rpc('submit_leave', {
       p_user_id: userId,
       p_leave_type: leaveType,
@@ -187,119 +149,198 @@ export default function PengajuanCutiPage() {
     else {
       toast.success(data?.[0]?.message || 'Pengajuan berhasil dikirim')
       setLeaveType(''); setStartDate(''); setEndDate(''); setReason(''); setAddress('')
-      setHalfDay(false); setHalfDayShift('')
-      fetchLeaveRequests()
+      setHalfDay(false); setHalfDayShift(''); fetchLeaveRequests()
     }
+
     setLoading(false)
   }
+
+  const filteredRequests = leaveRequests.filter((lr) =>
+    lr.leave_type.toLowerCase().includes(search.toLowerCase()) ||
+    lr.reason.toLowerCase().includes(search.toLowerCase()) ||
+    lr.status.toLowerCase().includes(search.toLowerCase())
+  )
 
   if (!mounted) return null
 
   return (
-    <div className="min-h-screen bg-white p-4">
+    <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
       <Toaster position="top-center" />
-      <div className="flex items-center mb-4 space-x-2 cursor-pointer" onClick={() => router.push('/dashboard')}>
-        <ArrowLeft size={24} />
-        <h1 className="text-xl font-bold">Pengajuan Cuti / Izin</h1>
+      <div
+        className="flex items-center mb-6 space-x-2 text-blue-700 hover:text-blue-900 transition cursor-pointer"
+        onClick={() => router.push('/dashboard')}
+      >
+        <ArrowLeft size={22} />
+        <h1 className="text-xl sm:text-2xl font-semibold">Pengajuan Cuti / Izin</h1>
       </div>
 
-      {/* FORM PENGAJUAN */}
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label>Jenis Cuti</label>
-          <select className="w-full border p-2 rounded" value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
-            <option value="">Pilih Jenis Cuti</option>
-            <option value="Cuti Tahunan">Cuti Tahunan</option>
-            <option value="Cuti Sakit">Cuti Sakit</option>
-            <option value="Cuti Karena Alasan Penting">Cuti Karena Alasan Penting</option>
-            <option value="Cuti Melahirkan">Cuti Melahirkan</option>
-            <option value="Cuti di Luar Tanggungan Negara">Cuti di Luar Tanggungan Negara</option>
-          </select>
-        </div>
+      {/* FORM */}
+      <Card className="mb-8 shadow-sm border border-gray-200">
+        <CardHeader>
+          <CardTitle className="text-lg sm:text-xl font-semibold text-gray-800">
+            Formulir Pengajuan Cuti
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="font-medium">Jenis Cuti</label>
+              <select
+                className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
+                value={leaveType}
+                onChange={(e) => setLeaveType(e.target.value)}
+              >
+                <option value="">Pilih Jenis Cuti</option>
+                <option value="Cuti Tahunan">Cuti Tahunan</option>
+                <option value="Cuti Sakit">Cuti Sakit</option>
+                <option value="Cuti Karena Alasan Penting">Cuti Karena Alasan Penting</option>
+                <option value="Cuti Melahirkan">Cuti Melahirkan</option>
+                <option value="Cuti di Luar Tanggungan Negara">Cuti di Luar Tanggungan Negara</option>
+              </select>
+            </div>
 
-        <div>
-          <label>Tanggal Mulai</label>
-          <input type="date" className="w-full border p-2 rounded" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-        </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="font-medium">Tanggal Mulai</label>
+                <input
+                  type="date"
+                  className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="font-medium">Tanggal Selesai</label>
+                <input
+                  type="date"
+                  className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+              </div>
+            </div>
 
-        <div>
-          <label>Tanggal Selesai</label>
-          <input type="date" className="w-full border p-2 rounded" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-        </div>
+            <div>
+              <label className="font-medium">Alamat Selama Cuti</label>
+              <textarea
+                className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="Tuliskan alamat selama cuti..."
+              />
+            </div>
 
-        <div>
-          <label>Alamat selama cuti</label>
-          <textarea className="w-full border p-2 rounded" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Tuliskan alamat selama cuti..." />
-        </div>
+            <div>
+              <label className="font-medium">Alasan Cuti</label>
+              <textarea
+                className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Tuliskan alasan cuti..."
+              />
+            </div>
 
-        <div>
-          <label>Alasan cuti</label>
-          <textarea className="w-full border p-2 rounded" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Tuliskan alasan cuti..." />
-        </div>
+            <div className="flex items-center gap-2">
+              <input type="checkbox" checked={halfDay} onChange={(e) => setHalfDay(e.target.checked)} />
+              <span>Cuti Setengah Hari</span>
+            </div>
 
-        <div className="flex items-center space-x-2">
-          <input type="checkbox" checked={halfDay} onChange={(e) => setHalfDay(e.target.checked)} />
-          <span>Cuti Setengah Hari</span>
-        </div>
+            {halfDay && (
+              <div>
+                <label>Pilih Shift</label>
+                <select
+                  className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
+                  value={halfDayShift}
+                  onChange={(e) => setHalfDayShift(e.target.value as 'pagi' | 'siang')}
+                >
+                  <option value="">-- Pilih --</option>
+                  <option value="pagi">Pagi</option>
+                  <option value="siang">Siang</option>
+                </select>
+              </div>
+            )}
 
-        {halfDay && (
-          <div>
-            <label>Pilih Shift</label>
-            <select className="w-full border p-2 rounded" value={halfDayShift} onChange={(e) => setHalfDayShift(e.target.value as 'pagi' | 'siang')}>
-              <option value="">-- Pilih --</option>
-              <option value="pagi">Pagi</option>
-              <option value="siang">Siang</option>
-            </select>
-          </div>
-        )}
+            {leaveType === 'Cuti Tahunan' && (
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={annualLeaveCut}
+                  onChange={(e) => setAnnualLeaveCut(e.target.checked)}
+                />
+                <span>Potong kuota tahunan</span>
+              </div>
+            )}
 
-        {leaveType === 'Cuti Tahunan' && (
-          <div className="flex items-center space-x-2">
-            <input type="checkbox" checked={annualLeaveCut} onChange={(e) => setAnnualLeaveCut(e.target.checked)} />
-            <span>Potong kuota tahunan</span>
-          </div>
-        )}
+            {leaveBalance !== null && (
+              <div className="p-2 bg-green-100 text-green-800 rounded text-sm text-center">
+                Sisa Cuti Tahunan: <strong>{leaveBalance}</strong> hari
+              </div>
+            )}
 
-        {leaveBalance !== null && (
-          <div className="p-2 bg-green-100 rounded">
-            Sisa Cuti Tahunan: <strong>{leaveBalance}</strong> hari
-          </div>
-        )}
+            <button
+              type="submit"
+              className="w-full bg-blue-700 text-white p-2 rounded-md hover:bg-blue-800 transition flex items-center justify-center"
+              disabled={loading}
+            >
+              {loading ? <Loader2 size={18} className="animate-spin" /> : 'Ajukan Cuti'}
+            </button>
+          </form>
+        </CardContent>
+      </Card>
 
-        <button type="submit" className="w-full bg-blue-700 text-white p-2 rounded" disabled={loading}>
-          {loading ? 'Mengirim...' : 'Ajukan Cuti'}
-        </button>
-      </form>
-
-      {/* RIWAYAT PENGAJUAN */}
-      <div className="mt-6">
-        <h2 className="font-bold mb-2">Riwayat Pengajuan</h2>
-        {leaveRequests.length === 0 ? (
-          <p>Belum ada pengajuan</p>
-        ) : (
-          <ul className="space-y-2">
-            {leaveRequests.map((lr) => (
-              <li key={lr.id} className="border p-2 rounded flex justify-between">
-                <div>
-                  <p>
-                    {lr.leave_type} ({lr.leave_days} hari) {lr.half_day ? `- Setengah Hari (${lr.half_day_shift})` : ''}
-                  </p>
-                  <p>{lr.start_date} s/d {lr.end_date}</p>
-                  <p>Alamat: {lr.address}</p>
-                  <p>Alasan: {lr.reason}</p>
-                </div>
-                <span className={`px-2 py-1 rounded-full ${
-                  lr.status === 'Disetujui' ? 'bg-green-200 text-green-800' :
-                  lr.status === 'Ditolak' ? 'bg-red-200 text-red-800' :
-                  'bg-yellow-200 text-yellow-800'
-                }`}>
-                  {lr.status}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {/* RIWAYAT */}
+      <Card className="shadow-sm border border-gray-200">
+        <CardHeader className="flex flex-col sm:flex-row justify-between items-center gap-2">
+          <CardTitle className="text-lg font-semibold text-gray-800">
+            Riwayat Pengajuan
+          </CardTitle>
+          <input
+            type="text"
+            placeholder="Cari data..."
+            className="border p-2 rounded-md focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </CardHeader>
+        <CardContent>
+          {filteredRequests.length === 0 ? (
+            <p className="text-gray-600 text-sm text-center py-2">Belum ada pengajuan</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full border text-sm">
+                <thead className="bg-gray-100 text-gray-700">
+                  <tr>
+                    <th className="p-2 border">Jenis Cuti</th>
+                    <th className="p-2 border">Tanggal</th>
+                    <th className="p-2 border">Durasi</th>
+                    <th className="p-2 border">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRequests.map((lr) => (
+                    <tr key={lr.id} className="text-center hover:bg-gray-50 transition">
+                      <td className="p-2 border">{lr.leave_type}</td>
+                      <td className="p-2 border">{lr.start_date} – {lr.end_date}</td>
+                      <td className="p-2 border">{lr.half_day ? '½ Hari' : `${lr.leave_days} Hari`}</td>
+                      <td className="p-2 border">
+                        <span className={`px-2 py-1 rounded-full text-xs ${
+                          lr.status === 'Disetujui'
+                            ? 'bg-green-200 text-green-800'
+                            : lr.status === 'Ditolak'
+                            ? 'bg-red-200 text-red-800'
+                            : 'bg-yellow-200 text-yellow-800'
+                        }`}>
+                          {lr.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
