@@ -73,13 +73,22 @@ export default function PengajuanCutiPage() {
   // =================== FETCH RIWAYAT ===================
   const fetchLeaveRequests = async () => {
     if (!userId) return
-    const { data: requests } = await supabase
+
+    const { data: requests, error } = await supabase
       .from('leave_requests')
       .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
 
-    if (!requests) return
+    if (error) {
+      console.error('Error fetching requests:', error.message)
+      return
+    }
+
+    if (!requests || requests.length === 0) {
+      setLeaveRequests([])
+      return
+    }
 
     const { data: approvals } = await supabase
       .from('leave_approvals')
@@ -91,18 +100,41 @@ export default function PengajuanCutiPage() {
       const level1 = approvals?.find(a => a.leave_request_id === req.id && a.level === 1)
 
       let finalStatus = req.status
-      if (level2?.status === 'approved') finalStatus = 'Disetujui'
-      else if (level2?.status === 'rejected') finalStatus = 'Ditolak'
-      else if (level1?.status === 'rejected') finalStatus = 'Ditolak'
-      else if (level1?.status === 'approved') finalStatus = 'Menunggu Persetujuan Kepala'
+      if (level2?.status === 'Disetujui') finalStatus = 'Disetujui'
+      else if (level2?.status === 'Ditolak') finalStatus = 'Ditolak'
+      else if (level1?.status === 'Ditolak') finalStatus = 'Ditolak'
+      else if (level1?.status === 'Disetujui') finalStatus = 'Disetujui'
 
-      return { ...req, status: finalStatus }
+      const diffDays = req.half_day
+        ? 0.5
+        : Math.ceil((new Date(req.end_date).getTime() - new Date(req.start_date).getTime()) / (1000 * 3600 * 24)) + 1
+
+      return { ...req, status: finalStatus, leave_days: diffDays }
     })
 
     setLeaveRequests(merged)
   }
 
   useEffect(() => { fetchLeaveRequests() }, [userId])
+
+  // =================== AUTO REFRESH KUOTA ===================
+  useEffect(() => {
+    if (!mounted || !userId) return
+    const fetchQuota = async () => {
+      const currentYear = new Date().getFullYear()
+      const { data: quotaData } = await supabase
+        .from('master_leave_quota')
+        .select('annual_quota, used_leave')
+        .eq('user_id', userId)
+        .eq('year', currentYear)
+        .single()
+
+      if (quotaData) {
+        setLeaveBalance(quotaData.annual_quota - quotaData.used_leave)
+      }
+    }
+    fetchQuota()
+  }, [mounted, userId, leaveRequests]) // auto-refresh saat leaveRequests berubah
 
   // =================== SUBMIT PENGAJUAN ===================
   const handleSubmit = async (e: React.FormEvent) => {
@@ -121,18 +153,16 @@ export default function PengajuanCutiPage() {
 
     setLoading(true)
 
-    // ===== CEK DUPLIKAT / OVERLAP LEVEL 1 =====
     const overlap = leaveRequests
       .filter(lr => lr.status === 'Menunggu Persetujuan Kepala')
       .some(lr => (new Date(startDate) <= new Date(lr.end_date)) && (new Date(endDate) >= new Date(lr.start_date)))
 
     if (overlap) {
-      toast.error('❌ Anda masih punya pengajuan Level 1 aktif yang overlap dengan tanggal ini.')
+      toast.error('❌ Anda masih punya pengajuan aktif yang overlap dengan tanggal ini.')
       setLoading(false)
       return
     }
 
-    // ===== SUBMIT KE DB =====
     const { data, error } = await supabase.rpc('submit_leave', {
       p_user_id: userId,
       p_leave_type: leaveType,
@@ -148,8 +178,14 @@ export default function PengajuanCutiPage() {
     if (error) toast.error(`Gagal submit: ${error.message}`)
     else {
       toast.success(data?.[0]?.message || 'Pengajuan berhasil dikirim')
-      setLeaveType(''); setStartDate(''); setEndDate(''); setReason(''); setAddress('')
-      setHalfDay(false); setHalfDayShift(''); fetchLeaveRequests()
+      setLeaveType('')
+      setStartDate('')
+      setEndDate('')
+      setReason('')
+      setAddress('')
+      setHalfDay(false)
+      setHalfDayShift('')
+      fetchLeaveRequests()
     }
 
     setLoading(false)
@@ -166,10 +202,8 @@ export default function PengajuanCutiPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
       <Toaster position="top-center" />
-      <div
-        className="flex items-center mb-6 space-x-2 text-blue-700 hover:text-blue-900 transition cursor-pointer"
-        onClick={() => router.push('/dashboard')}
-      >
+      <div className="flex items-center mb-6 space-x-2 text-blue-700 hover:text-blue-900 transition cursor-pointer"
+           onClick={() => router.push('/dashboard')}>
         <ArrowLeft size={22} />
         <h1 className="text-xl sm:text-2xl font-semibold">Pengajuan Cuti / Izin</h1>
       </div>
@@ -183,6 +217,7 @@ export default function PengajuanCutiPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Jenis Cuti */}
             <div>
               <label className="font-medium">Jenis Cuti</label>
               <select
@@ -199,47 +234,37 @@ export default function PengajuanCutiPage() {
               </select>
             </div>
 
+            {/* Tanggal */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="font-medium">Tanggal Mulai</label>
-                <input
-                  type="date"
-                  className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
+                <input type="date" className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
+                       value={startDate} onChange={(e) => setStartDate(e.target.value)} />
               </div>
               <div>
                 <label className="font-medium">Tanggal Selesai</label>
-                <input
-                  type="date"
-                  className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
+                <input type="date" className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
+                       value={endDate} onChange={(e) => setEndDate(e.target.value)} />
               </div>
             </div>
 
+            {/* Alamat */}
             <div>
               <label className="font-medium">Alamat Selama Cuti</label>
-              <textarea
-                className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="Tuliskan alamat selama cuti..."
-              />
+              <textarea className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
+                        value={address} onChange={(e) => setAddress(e.target.value)}
+                        placeholder="Tuliskan alamat selama cuti..." />
             </div>
 
+            {/* Alasan */}
             <div>
               <label className="font-medium">Alasan Cuti</label>
-              <textarea
-                className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Tuliskan alasan cuti..."
-              />
+              <textarea className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
+                        value={reason} onChange={(e) => setReason(e.target.value)}
+                        placeholder="Tuliskan alasan cuti..." />
             </div>
 
+            {/* Setengah hari */}
             <div className="flex items-center gap-2">
               <input type="checkbox" checked={halfDay} onChange={(e) => setHalfDay(e.target.checked)} />
               <span>Cuti Setengah Hari</span>
@@ -248,11 +273,8 @@ export default function PengajuanCutiPage() {
             {halfDay && (
               <div>
                 <label>Pilih Shift</label>
-                <select
-                  className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
-                  value={halfDayShift}
-                  onChange={(e) => setHalfDayShift(e.target.value as 'pagi' | 'siang')}
-                >
+                <select className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
+                        value={halfDayShift} onChange={(e) => setHalfDayShift(e.target.value as 'pagi' | 'siang')}>
                   <option value="">-- Pilih --</option>
                   <option value="pagi">Pagi</option>
                   <option value="siang">Siang</option>
@@ -262,11 +284,7 @@ export default function PengajuanCutiPage() {
 
             {leaveType === 'Cuti Tahunan' && (
               <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  checked={annualLeaveCut}
-                  onChange={(e) => setAnnualLeaveCut(e.target.checked)}
-                />
+                <input type="checkbox" checked={annualLeaveCut} onChange={(e) => setAnnualLeaveCut(e.target.checked)} />
                 <span>Potong kuota tahunan</span>
               </div>
             )}
@@ -277,11 +295,9 @@ export default function PengajuanCutiPage() {
               </div>
             )}
 
-            <button
-              type="submit"
-              className="w-full bg-blue-700 text-white p-2 rounded-md hover:bg-blue-800 transition flex items-center justify-center"
-              disabled={loading}
-            >
+            <button type="submit"
+                    className="w-full bg-blue-700 text-white p-2 rounded-md hover:bg-blue-800 transition flex items-center justify-center"
+                    disabled={loading}>
               {loading ? <Loader2 size={18} className="animate-spin" /> : 'Ajukan Cuti'}
             </button>
           </form>
@@ -291,16 +307,10 @@ export default function PengajuanCutiPage() {
       {/* RIWAYAT */}
       <Card className="shadow-sm border border-gray-200">
         <CardHeader className="flex flex-col sm:flex-row justify-between items-center gap-2">
-          <CardTitle className="text-lg font-semibold text-gray-800">
-            Riwayat Pengajuan
-          </CardTitle>
-          <input
-            type="text"
-            placeholder="Cari data..."
-            className="border p-2 rounded-md focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <CardTitle className="text-lg font-semibold text-gray-800">Riwayat Pengajuan</CardTitle>
+          <input type="text" placeholder="Cari data..."
+                 className="border p-2 rounded-md focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+                 value={search} onChange={(e) => setSearch(e.target.value)} />
         </CardHeader>
         <CardContent>
           {filteredRequests.length === 0 ? (
