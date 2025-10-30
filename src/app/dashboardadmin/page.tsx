@@ -174,7 +174,7 @@ export default function DashboardAdmin() {
         <div className="mb-6 p-4 rounded-xl bg-white shadow-md flex items-center justify-between">
           <div>
             <h3 className="text-sm font-medium text-gray-500">
-              Jumlah Pegawai
+              Jumlah Pegawai Aktif
             </h3>
             <p className="text-2xl font-bold text-gray-900">
               {totalPegawai} orang

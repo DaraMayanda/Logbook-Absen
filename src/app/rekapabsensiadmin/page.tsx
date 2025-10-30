@@ -220,8 +220,9 @@ export default function RekapAbsensiAdmin() {
           ) : filtered.length === 0 ? (
             <p className="text-gray-500">Tidak ada data absensi.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full table-auto border-collapse border border-gray-300">
+           <div className="w-full overflow-x-auto rounded-md">
+           <table className="min-w-[900px] sm:min-w-full table-auto border-collapse border border-gray-300 text-sm">
+
                 <thead>
                   <tr className="bg-gray-100 text-gray-800">
                     <th className="border px-4 py-2">Nama</th>

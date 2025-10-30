@@ -304,53 +304,65 @@ export default function PengajuanCutiPage() {
         </CardContent>
       </Card>
 
-      {/* RIWAYAT */}
-      <Card className="shadow-sm border border-gray-200">
-        <CardHeader className="flex flex-col sm:flex-row justify-between items-center gap-2">
-          <CardTitle className="text-lg font-semibold text-gray-800">Riwayat Pengajuan</CardTitle>
-          <input type="text" placeholder="Cari data..."
-                 className="border p-2 rounded-md focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
-                 value={search} onChange={(e) => setSearch(e.target.value)} />
-        </CardHeader>
-        <CardContent>
-          {filteredRequests.length === 0 ? (
-            <p className="text-gray-600 text-sm text-center py-2">Belum ada pengajuan</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full border text-sm">
-                <thead className="bg-gray-100 text-gray-700">
-                  <tr>
-                    <th className="p-2 border">Jenis Cuti</th>
-                    <th className="p-2 border">Tanggal</th>
-                    <th className="p-2 border">Durasi</th>
-                    <th className="p-2 border">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRequests.map((lr) => (
-                    <tr key={lr.id} className="text-center hover:bg-gray-50 transition">
-                      <td className="p-2 border">{lr.leave_type}</td>
-                      <td className="p-2 border">{lr.start_date} – {lr.end_date}</td>
-                      <td className="p-2 border">{lr.half_day ? '½ Hari' : `${lr.leave_days} Hari`}</td>
-                      <td className="p-2 border">
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          lr.status === 'Disetujui'
-                            ? 'bg-green-200 text-green-800'
-                            : lr.status === 'Ditolak'
-                            ? 'bg-red-200 text-red-800'
-                            : 'bg-yellow-200 text-yellow-800'
-                        }`}>
-                          {lr.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+     {/* RIWAYAT */}
+<Card className="shadow-sm border border-gray-200">
+  <CardHeader className="flex flex-col sm:flex-row justify-between items-center gap-2">
+    <CardTitle className="text-lg font-semibold text-gray-800">Riwayat Pengajuan</CardTitle>
+    <input
+      type="text"
+      placeholder="Cari data..."
+      className="border p-2 rounded-md focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+      value={search}
+      onChange={(e) => setSearch(e.target.value)}
+    />
+  </CardHeader>
+  <CardContent>
+    {filteredRequests.length === 0 ? (
+      <p className="text-gray-600 text-sm text-center py-2">Belum ada pengajuan</p>
+    ) : (
+      <div className="overflow-x-auto md:overflow-visible w-full max-w-full">
+        <div className="min-w-[600px] md:min-w-0">
+          <table className="w-full table-auto border-collapse text-xs sm:text-sm text-center">
+            <thead className="bg-gray-100 text-gray-700">
+              <tr>
+                <th className="p-2 border">Jenis Cuti</th>
+                <th className="p-2 border">Tanggal</th>
+                <th className="p-2 border">Durasi</th>
+                <th className="p-2 border">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRequests.map((lr) => (
+                <tr key={lr.id} className="hover:bg-gray-50 transition">
+                  <td className="p-2 border">{lr.leave_type}</td>
+                  <td className="p-2 border">
+                    {lr.start_date} – {lr.end_date}
+                  </td>
+                  <td className="p-2 border">
+                    {lr.half_day ? '½ Hari' : `${lr.leave_days} Hari`}
+                  </td>
+                  <td className="p-2 border">
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs ${
+                        lr.status === 'Disetujui'
+                          ? 'bg-green-200 text-green-800'
+                          : lr.status === 'Ditolak'
+                          ? 'bg-red-200 text-red-800'
+                          : 'bg-yellow-200 text-yellow-800'
+                      }`}
+                    >
+                      {lr.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )}
+  </CardContent>
+</Card>
     </div>
   )
 }
