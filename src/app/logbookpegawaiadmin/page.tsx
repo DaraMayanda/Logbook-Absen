@@ -60,10 +60,7 @@ export default function LogbookPegawaiAdminPage() {
     if (!win) return
 
     const formattedTasks = row.uraian_kerja
-      ? row.uraian_kerja
-          .split(';')
-          .map((t, i) => `${i + 1}. ${t.trim()}`)
-          .join('<br>')
+      ? row.uraian_kerja.split(';').map((t, i) => `${i + 1}. ${t.trim()}`).join('<br>')
       : '-'
 
     win.document.write(`
@@ -103,9 +100,9 @@ export default function LogbookPegawaiAdminPage() {
   }
 
   const exportToExcel = () => {
-    if (!attendances || attendances.length === 0) return
+    if (!attendances || attendances.length === 0) return alert('Belum ada data untuk diekspor.')
 
-    const exportData: { [key: string]: any }[] = attendances.map((a, i) => ({
+    const exportData: Record<string, any>[] = attendances.map((a, i) => ({
       No: i + 1,
       Nama: a.full_name ?? '',
       Jabatan: a.position ?? '',
@@ -118,10 +115,7 @@ export default function LogbookPegawaiAdminPage() {
     const ws = XLSX.utils.json_to_sheet(exportData)
 
     const colWidths = Object.keys(exportData[0]).map((key) => ({
-      wch: Math.max(
-        key.length + 2,
-        ...exportData.map((row) => String(row[key] ?? '').length + 2)
-      ),
+      wch: Math.max(key.length + 2, ...exportData.map((row) => String(row[key] ?? '').length + 2))
     }))
     ws['!cols'] = colWidths
 
@@ -130,6 +124,7 @@ export default function LogbookPegawaiAdminPage() {
       for (let C = range.s.c; C <= range.e.c; ++C) {
         const cellAddress = XLSX.utils.encode_cell({ r: R, c: C })
         if (!ws[cellAddress]) continue
+        if (!ws[cellAddress].s) ws[cellAddress].s = {}
         ws[cellAddress].s = {
           alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
         }
@@ -151,25 +146,29 @@ export default function LogbookPegawaiAdminPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
-      {/* Tombol Atas */}
-      <div className="flex justify-between items-center mb-6">
-        <button
-          onClick={() => router.push('/dashboardadmin')}
-          className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors duration-200"
-        >
-          <ArrowLeft size={18} /> Kembali ke Dashboard
-        </button>
+  {/* Tombol Header */}
+  <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-3">
+    {/* Tombol Kembali */}
+    <button
+      onClick={() => router.push('/dashboardadmin')}
+      className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md w-full sm:w-auto justify-center shadow-sm"
+    >
+      <ArrowLeft className="w-4 h-4" /> Kembali ke Dashboard
+    </button>
 
-        <button
-          onClick={exportToExcel}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors duration-200"
-        >
-          <FileSpreadsheet size={18} /> Export Excel
-        </button>
-      </div>
+    {/* Tombol Export */}
+    <button
+      onClick={exportToExcel}
+      className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md w-full sm:w-auto justify-center shadow-sm"
+    >
+      <FileSpreadsheet className="w-4 h-4" /> Export Excel
+    </button>
+  </div>
+
 
       <h1 className="text-2xl font-bold mb-4 text-gray-800">Logbook Pegawai</h1>
 
+      {/* Search */}
       <input
         type="text"
         placeholder="Cari nama, jabatan, atau status..."
@@ -178,6 +177,7 @@ export default function LogbookPegawaiAdminPage() {
         className="mb-4 w-full rounded-md border border-gray-300 p-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
       />
 
+      {/* Table */}
       <div className="overflow-x-auto bg-white rounded-xl shadow-sm">
         <table className="w-full border-collapse">
           <thead className="bg-gray-100 text-gray-800">
@@ -210,17 +210,14 @@ export default function LogbookPegawaiAdminPage() {
                     className="p-3 whitespace-pre-line"
                     dangerouslySetInnerHTML={{
                       __html: row.uraian_kerja
-                        ? row.uraian_kerja
-                            .split(';')
-                            .map((t, i) => `${i + 1}. ${t.trim()}`)
-                            .join('<br>')
+                        ? row.uraian_kerja.split(';').map((t, i) => `${i + 1}. ${t.trim()}`).join('<br>')
                         : '-'
                     }}
                   />
                   <td className="p-3 text-center">
                     <button
                       onClick={() => handlePrint(row)}
-                      className="flex items-center justify-center p-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200"
+                      className="p-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition"
                     >
                       <Printer size={18} />
                     </button>

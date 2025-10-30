@@ -182,24 +182,27 @@ export default function RekapAbsensiAdmin() {
   // =====================================================
   return (
     <div className="min-h-screen bg-gray-50 p-6 font-sans">
-      <Toaster position="top-center" />
+  <Toaster position="top-center" />
 
-      {/* Tombol header */}
-     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-  <Button
-    onClick={() => router.push('/dashboardadmin')}
-    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md shadow-sm"
-  >
-    <ArrowLeft className="w-4 h-4" /> Kembali ke Dashboard
-  </Button>
+  {/* Tombol Header */}
+  <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-3">
+    {/* Tombol Kembali */}
+    <Button
+      onClick={() => router.push('/dashboardadmin')}
+      className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md w-full sm:w-auto justify-center shadow-sm"
+    >
+      <ArrowLeft className="w-4 h-4" /> Kembali ke Dashboard
+    </Button>
 
-        <Button
-    onClick={exportToExcel}
-    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md shadow-sm"
-  >
-    <FileSpreadsheet className="w-4 h-4" /> Export Excel
-  </Button>
-</div>
+    {/* Tombol Export */}
+    <Button
+      onClick={exportToExcel}
+      className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md w-full sm:w-auto justify-center shadow-sm"
+    >
+      <FileSpreadsheet className="w-4 h-4" /> Export Excel
+    </Button>
+  </div>
+
 
       {/* Filter */}
       <div className="flex flex-wrap gap-4 mb-4">
