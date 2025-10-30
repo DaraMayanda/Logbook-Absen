@@ -130,13 +130,8 @@ export default function LogbookPegawaiAdminPage() {
       for (let C = range.s.c; C <= range.e.c; ++C) {
         const cellAddress = XLSX.utils.encode_cell({ r: R, c: C })
         if (!ws[cellAddress]) continue
-        if (!ws[cellAddress].s) ws[cellAddress].s = {}
         ws[cellAddress].s = {
-          alignment: {
-            vertical: 'center',
-            horizontal: 'center',
-            wrapText: true,
-          },
+          alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
         }
       }
     }
@@ -156,20 +151,20 @@ export default function LogbookPegawaiAdminPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
-      {/* Tombol header (responsif & sejajar) */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+      {/* Tombol Atas */}
+      <div className="flex justify-between items-center mb-6">
         <button
           onClick={() => router.push('/dashboardadmin')}
-          className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md transition-all duration-200 shadow-sm"
+          className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors duration-200"
         >
-          <ArrowLeft className="w-4 h-4" /> Kembali ke Dashboard
+          <ArrowLeft size={18} /> Kembali ke Dashboard
         </button>
 
         <button
           onClick={exportToExcel}
-          className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md shadow-sm transition-all duration-200"
+          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors duration-200"
         >
-          <FileSpreadsheet className="w-4 h-4" /> Export Excel
+          <FileSpreadsheet size={18} /> Export Excel
         </button>
       </div>
 
@@ -184,7 +179,7 @@ export default function LogbookPegawaiAdminPage() {
       />
 
       <div className="overflow-x-auto bg-white rounded-xl shadow-sm">
-        <table className="w-full border-collapse min-w-[800px]">
+        <table className="w-full border-collapse">
           <thead className="bg-gray-100 text-gray-800">
             <tr>
               <th className="p-3 text-left">Nama</th>
@@ -225,7 +220,7 @@ export default function LogbookPegawaiAdminPage() {
                   <td className="p-3 text-center">
                     <button
                       onClick={() => handlePrint(row)}
-                      className="p-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition"
+                      className="flex items-center justify-center p-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200"
                     >
                       <Printer size={18} />
                     </button>

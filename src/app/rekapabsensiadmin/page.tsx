@@ -185,21 +185,21 @@ export default function RekapAbsensiAdmin() {
       <Toaster position="top-center" />
 
       {/* Tombol header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-        <Button
-          onClick={() => router.push('/dashboardadmin')}
-          className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md shadow-sm"
-        >
-          <ArrowLeft className="w-4 h-4" /> Kembali ke Dashboard
-        </Button>
+     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+  <Button
+    onClick={() => router.push('/dashboardadmin')}
+    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md shadow-sm"
+  >
+    <ArrowLeft className="w-4 h-4" /> Kembali ke Dashboard
+  </Button>
 
         <Button
-          onClick={exportToExcel}
-          className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md shadow-sm"
-        >
-          <FileSpreadsheet className="w-4 h-4" /> Export Excel
-        </Button>
-      </div>
+    onClick={exportToExcel}
+    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md shadow-sm"
+  >
+    <FileSpreadsheet className="w-4 h-4" /> Export Excel
+  </Button>
+</div>
 
       {/* Filter */}
       <div className="flex flex-wrap gap-4 mb-4">
