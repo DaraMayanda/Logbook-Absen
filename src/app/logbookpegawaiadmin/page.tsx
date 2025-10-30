@@ -28,7 +28,6 @@ export default function LogbookPegawaiAdminPage() {
       const { data, error } = await supabase.rpc('get_logbook_with_tasks')
       if (error) throw error
       setAttendances(data || [])
-
     } catch (err) {
       console.error('Fetch error:', err)
     } finally {
@@ -57,103 +56,95 @@ export default function LogbookPegawaiAdminPage() {
   }
 
   const handlePrint = (row: Attendance) => {
-  const win = window.open('', '_blank')
-  if (!win) return
+    const win = window.open('', '_blank')
+    if (!win) return
 
-  // Format uraian_kerja jadi bernomor dan baris baru
-  const formattedTasks = row.uraian_kerja
-    ? row.uraian_kerja
-        .split(';')
-        .map((t, i) => `${i + 1}. ${t.trim()}`)
-        .join('<br>')
-    : '-'
+    const formattedTasks = row.uraian_kerja
+      ? row.uraian_kerja
+          .split(';')
+          .map((t, i) => `${i + 1}. ${t.trim()}`)
+          .join('<br>')
+      : '-'
 
-  win.document.write(`
-    <!DOCTYPE html>
-    <html lang="id">
-    <head>
-      <meta charset="UTF-8">
-      <title>Cetak Logbook Pegawai</title>
-      <style>
-        body { font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; }
-        h1 { text-align: center; margin-bottom: 25px; }
-        table { width: 100%; margin-bottom: 15px; }
-        td { padding: 4px 0; vertical-align: top; }
-        .label { font-weight: bold; width: 100px; }
-        .separator { width: 10px; }
-        .uraian { margin-top: 10px; }
-      </style>
-    </head>
-    <body>
-      <h1>Laporan Harian Pegawai (Logbook)</h1>
-      <table>
-        <tr><td class="label">Nama</td><td class="separator">:</td><td>${row.full_name}</td></tr>
-        <tr><td class="label">Jabatan</td><td class="separator">:</td><td>${row.position}</td></tr>
-        <tr><td class="label">Tanggal</td><td class="separator">:</td><td>${formatDate(row.attendance_date)}</td></tr>
-        <tr><td class="label">Shift</td><td class="separator">:</td><td>${row.shift || '-'}</td></tr>
-        <tr><td class="label">Status</td><td class="separator">:</td><td>${row.status || '-'}</td></tr>
-      </table>
-      <div class="uraian">
-        <strong>Uraian Pekerjaan:</strong><br>
-        ${formattedTasks}
-      </div>
-    </body>
-    </html>
-  `)
-  win.document.close()
-  win.print()
-}
+    win.document.write(`
+      <!DOCTYPE html>
+      <html lang="id">
+      <head>
+        <meta charset="UTF-8">
+        <title>Cetak Logbook Pegawai</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; }
+          h1 { text-align: center; margin-bottom: 25px; }
+          table { width: 100%; margin-bottom: 15px; }
+          td { padding: 4px 0; vertical-align: top; }
+          .label { font-weight: bold; width: 100px; }
+          .separator { width: 10px; }
+          .uraian { margin-top: 10px; }
+        </style>
+      </head>
+      <body>
+        <h1>Laporan Harian Pegawai (Logbook)</h1>
+        <table>
+          <tr><td class="label">Nama</td><td class="separator">:</td><td>${row.full_name}</td></tr>
+          <tr><td class="label">Jabatan</td><td class="separator">:</td><td>${row.position}</td></tr>
+          <tr><td class="label">Tanggal</td><td class="separator">:</td><td>${formatDate(row.attendance_date)}</td></tr>
+          <tr><td class="label">Shift</td><td class="separator">:</td><td>${row.shift || '-'}</td></tr>
+          <tr><td class="label">Status</td><td class="separator">:</td><td>${row.status || '-'}</td></tr>
+        </table>
+        <div class="uraian">
+          <strong>Uraian Pekerjaan:</strong><br>
+          ${formattedTasks}
+        </div>
+      </body>
+      </html>
+    `)
+    win.document.close()
+    win.print()
+  }
 
+  const exportToExcel = () => {
+    if (!attendances || attendances.length === 0) return
 
- const exportToExcel = () => {
-  if (!attendances || attendances.length === 0) return
+    const exportData: { [key: string]: any }[] = attendances.map((a, i) => ({
+      No: i + 1,
+      Nama: a.full_name ?? '',
+      Jabatan: a.position ?? '',
+      Tanggal: formatDate(a.attendance_date ?? ''),
+      Shift: a.shift ?? '-',
+      Status: a.status ?? '-',
+      'Uraian Kerja': a.uraian_kerja ?? '-',
+    }))
 
-  // 1️⃣ Mapping data untuk Excel
-  const exportData: { [key: string]: any }[] = attendances.map((a, i) => ({
-    No: i + 1,
-    Nama: a.full_name ?? '',
-    Jabatan: a.position ?? '',
-    Tanggal: formatDate(a.attendance_date ?? ''),
-    Shift: a.shift ?? '-',
-    Status: a.status ?? '-',
-    'Uraian Kerja': a.uraian_kerja ?? '-',
-  }))
+    const ws = XLSX.utils.json_to_sheet(exportData)
 
-  // 2️⃣ Buat worksheet dari JSON
-  const ws = XLSX.utils.json_to_sheet(exportData)
+    const colWidths = Object.keys(exportData[0]).map((key) => ({
+      wch: Math.max(
+        key.length + 2,
+        ...exportData.map((row) => String(row[key] ?? '').length + 2)
+      ),
+    }))
+    ws['!cols'] = colWidths
 
-  // 3️⃣ Hitung lebar kolom otomatis
-  const colWidths = Object.keys(exportData[0]).map((key) => ({
-    wch: Math.max(
-      key.length + 2,
-      ...exportData.map((row) => String(row[key] ?? '').length + 2)
-    ),
-  }))
-  ws['!cols'] = colWidths
-
-  // 4️⃣ Rapiin teks: center + wrapText
-  const range = XLSX.utils.decode_range(ws['!ref']!)
-  for (let R = range.s.r; R <= range.e.r; ++R) {
-    for (let C = range.s.c; C <= range.e.c; ++C) {
-      const cellAddress = XLSX.utils.encode_cell({ r: R, c: C })
-      if (!ws[cellAddress]) continue
-      if (!ws[cellAddress].s) ws[cellAddress].s = {}
-      ws[cellAddress].s = {
-        alignment: {
-          vertical: 'center',
-          horizontal: 'center',
-          wrapText: true,
-        },
+    const range = XLSX.utils.decode_range(ws['!ref']!)
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C })
+        if (!ws[cellAddress]) continue
+        if (!ws[cellAddress].s) ws[cellAddress].s = {}
+        ws[cellAddress].s = {
+          alignment: {
+            vertical: 'center',
+            horizontal: 'center',
+            wrapText: true,
+          },
+        }
       }
     }
-  }
 
-  // 5️⃣ Buat workbook & simpan file
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Logbook Pegawai')
-  XLSX.writeFile(wb, 'Logbook_Pegawai.xlsx')
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Logbook Pegawai')
+    XLSX.writeFile(wb, 'Logbook_Pegawai.xlsx')
   }
-
 
   if (loading) {
     return (
@@ -165,19 +156,20 @@ export default function LogbookPegawaiAdminPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
-      <div className="flex justify-between items-center mb-4">
+      {/* Tombol header (responsif & sejajar) */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <button
           onClick={() => router.push('/dashboardadmin')}
-          className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+          className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md transition-all duration-200 shadow-sm"
         >
-          <ArrowLeft size={18} /> Kembali ke Dashboard
+          <ArrowLeft className="w-4 h-4" /> Kembali ke Dashboard
         </button>
 
         <button
           onClick={exportToExcel}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700 transition-all duration-200"
+          className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md shadow-sm transition-all duration-200"
         >
-          <FileSpreadsheet size={18} className="text-white" /> Export Excel
+          <FileSpreadsheet className="w-4 h-4" /> Export Excel
         </button>
       </div>
 
@@ -191,9 +183,8 @@ export default function LogbookPegawaiAdminPage() {
         className="mb-4 w-full rounded-md border border-gray-300 p-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
       />
 
-     <div className="w-full overflow-x-auto rounded-xl shadow-sm bg-white pb-3">
-  <table className="min-w-[900px] sm:min-w-full border-collapse text-sm">
-
+      <div className="overflow-x-auto bg-white rounded-xl shadow-sm">
+        <table className="w-full border-collapse min-w-[800px]">
           <thead className="bg-gray-100 text-gray-800">
             <tr>
               <th className="p-3 text-left">Nama</th>
@@ -220,19 +211,17 @@ export default function LogbookPegawaiAdminPage() {
                   <td className="p-3">{formatDate(row.attendance_date)}</td>
                   <td className="p-3">{row.shift || '-'}</td>
                   <td className="p-3">{row.status || '-'}</td>
-                 <td
-  className="p-3 whitespace-pre-line"
-  dangerouslySetInnerHTML={{
-    __html: row.uraian_kerja
-      ? row.uraian_kerja
-          .split(';')
-          .map((t, i) => `${i + 1}. ${t.trim()}`)
-          .join('<br>')
-      : '-'
-  }}
-/>
-
-
+                  <td
+                    className="p-3 whitespace-pre-line"
+                    dangerouslySetInnerHTML={{
+                      __html: row.uraian_kerja
+                        ? row.uraian_kerja
+                            .split(';')
+                            .map((t, i) => `${i + 1}. ${t.trim()}`)
+                            .join('<br>')
+                        : '-'
+                    }}
+                  />
                   <td className="p-3 text-center">
                     <button
                       onClick={() => handlePrint(row)}

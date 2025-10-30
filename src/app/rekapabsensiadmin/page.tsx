@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Loader2, ArrowLeft } from 'lucide-react'
+import { Loader2, ArrowLeft, FileSpreadsheet } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
+import * as XLSX from 'xlsx'
 
 type Attendance = {
   id: number
@@ -129,7 +130,6 @@ export default function RekapAbsensiAdmin() {
   const formatDate = (dateStr: string) => dateStr ? new Date(dateStr).toLocaleDateString('id-ID') : '-'
   const formatDateTime = (dateStr: string | null) => dateStr ? new Date(dateStr).toLocaleString('id-ID') : '-'
 
-  // Statistik agregat per pegawai
   const statsPerEmployee = useMemo(() => {
     const map: Record<string, { Hadir: number; TidakHadir: number }> = {}
     attendances.forEach(a => {
@@ -142,24 +142,66 @@ export default function RekapAbsensiAdmin() {
   }, [attendances])
 
   // =====================================================
+  const exportToExcel = () => {
+  if (!filtered || filtered.length === 0) {
+    toast.error('Data kosong, tidak bisa di-export')
+    return
+  }
+
+  const data = filtered.map((att, i) => ({
+    No: i + 1,
+    Nama: att.full_name || '-',
+    Posisi: att.position || '-',
+    Tanggal: formatDate(att.attendance_date),
+    Shift: att.shift,
+    'Check In': formatDateTime(att.check_in),
+    'Check Out': formatDateTime(att.check_out),
+    Status: att.status,
+    Terlambat: att.terlambat,
+    'Lokasi Masuk': att.check_in_location || '-',
+    'Lokasi Keluar': att.check_out_location || '-',
+  }))
+
+  const ws = XLSX.utils.json_to_sheet(data)
+
+  // Auto-width kolom
+  const colWidths = Object.keys(data[0]).map(key => ({
+    wch: Math.max(
+      key.length + 2,
+      ...data.map(row => String((row as any)[key] ?? '').length + 2) // <-- pakai 'as any'
+    )
+  }))
+  ws['!cols'] = colWidths
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Rekap Absensi')
+  XLSX.writeFile(wb, `Rekap_Absensi_${new Date().toISOString().slice(0,10)}.xlsx`)
+}
+
+
+  // =====================================================
   return (
     <div className="min-h-screen bg-gray-50 p-6 font-sans">
       <Toaster position="top-center" />
 
-      {/* Tombol Kembali */}
-      <div className="mb-4">
+      {/* Tombol header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <Button
           onClick={() => router.push('/dashboardadmin')}
-          className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white"
+          className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md shadow-sm"
         >
-          <ArrowLeft className="w-4 h-4" />
-          Kembali ke Dashboard
+          <ArrowLeft className="w-4 h-4" /> Kembali ke Dashboard
+        </Button>
+
+        <Button
+          onClick={exportToExcel}
+          className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md shadow-sm"
+        >
+          <FileSpreadsheet className="w-4 h-4" /> Export Excel
         </Button>
       </div>
 
-      <h1 className="text-3xl font-bold text-gray-800 mb-4">Rekap Absensi Admin</h1>
-
-      {/* Filters */}
+      {/* Filter */}
       <div className="flex flex-wrap gap-4 mb-4">
         <input
           type="text"
@@ -192,7 +234,7 @@ export default function RekapAbsensiAdmin() {
         </Button>
       </div>
 
-      {/* Statistik per pegawai */}
+      {/* Statistik */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         {Object.entries(statsPerEmployee).map(([name, stats]) => (
           <Card key={name} className="border shadow-sm">
@@ -220,9 +262,8 @@ export default function RekapAbsensiAdmin() {
           ) : filtered.length === 0 ? (
             <p className="text-gray-500">Tidak ada data absensi.</p>
           ) : (
-           <div className="w-full overflow-x-auto rounded-md">
-           <table className="min-w-[900px] sm:min-w-full table-auto border-collapse border border-gray-300 text-sm">
-
+            <div className="w-full overflow-x-auto rounded-md">
+              <table className="min-w-[900px] sm:min-w-full table-auto border-collapse border border-gray-300 text-sm">
                 <thead>
                   <tr className="bg-gray-100 text-gray-800">
                     <th className="border px-4 py-2">Nama</th>
