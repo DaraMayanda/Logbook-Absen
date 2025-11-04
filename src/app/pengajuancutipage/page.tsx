@@ -7,6 +7,7 @@ import toast, { Toaster } from 'react-hot-toast'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 
+// =================== PERBAIKAN 1: UBAH TIPE DATA ===================
 type LeaveRequest = {
   id: number
   leave_type: string
@@ -19,7 +20,7 @@ type LeaveRequest = {
   half_day: boolean
   half_day_shift: string | null
   annual_leave_cut: boolean
-  leave_days: number
+  durasi_hari_kerja?: number // <-- DIUBAH: Ganti leave_days dengan ini
 }
 
 export default function PengajuanCutiPage() {
@@ -70,13 +71,16 @@ export default function PengajuanCutiPage() {
     fetchUserAndQuota()
   }, [mounted, router])
 
-  // =================== FETCH RIWAYAT ===================
+  // =================== PERBAIKAN 2: FETCH RIWAYAT ===================
   const fetchLeaveRequests = async () => {
     if (!userId) return
 
+    // Ambil kolom yang benar, jangan 'select(*)'
     const { data: requests, error } = await supabase
       .from('leave_requests')
-      .select('*')
+      .select(
+        'id, leave_type, start_date, end_date, reason, address, status, created_at, half_day, half_day_shift, annual_leave_cut, durasi_hari_kerja'
+      )
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
 
@@ -95,7 +99,7 @@ export default function PengajuanCutiPage() {
       .select('leave_request_id, level, status')
       .in('leave_request_id', requests.map(r => r.id))
 
-    const merged = requests.map((req: LeaveRequest) => {
+    const merged = requests.map((req: any) => { // Ubah ke 'any' untuk proses mapping
       const level2 = approvals?.find(a => a.leave_request_id === req.id && a.level === 2)
       const level1 = approvals?.find(a => a.leave_request_id === req.id && a.level === 1)
 
@@ -103,16 +107,18 @@ export default function PengajuanCutiPage() {
       if (level2?.status === 'Disetujui') finalStatus = 'Disetujui'
       else if (level2?.status === 'Ditolak') finalStatus = 'Ditolak'
       else if (level1?.status === 'Ditolak') finalStatus = 'Ditolak'
-      else if (level1?.status === 'Disetujui') finalStatus = 'Disetujui'
+      else if (level1?.status === 'Disetujui') finalStatus = 'Disetujui' // Anda bisa ganti jadi 'Menunggu Atasan' jika mau
 
-      const diffDays = req.half_day
-        ? 0.5
-        : Math.ceil((new Date(req.end_date).getTime() - new Date(req.start_date).getTime()) / (1000 * 3600 * 24)) + 1
-
-      return { ...req, status: finalStatus, leave_days: diffDays }
+      // --- HAPUS PERHITUNGAN diffDays YANG SALAH ---
+      // const diffDays = req.half_day
+      //   ? 0.5
+      //   : Math.ceil((new Date(req.end_date).getTime() - new Date(req.start_date).getTime()) / (1000 * 3600 * 24)) + 1
+      
+      // Cukup kembalikan status yang baru
+      return { ...req, status: finalStatus }
     })
 
-    setLeaveRequests(merged)
+    setLeaveRequests(merged as LeaveRequest[]) // Cast ke Tipe yang sudah benar
   }
 
   useEffect(() => { fetchLeaveRequests() }, [userId])
@@ -136,25 +142,28 @@ export default function PengajuanCutiPage() {
     fetchQuota()
   }, [mounted, userId, leaveRequests]) // auto-refresh saat leaveRequests berubah
 
-  // =================== SUBMIT PENGAJUAN ===================
+  // =================== PERBAIKAN 4: SUBMIT PENGAJUAN ===================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!leaveType || !startDate || !endDate || !reason || !address)
       return toast.error('Semua field wajib diisi')
     if (!userId) return toast.error('User belum terdeteksi')
 
-    const diffDays = halfDay
-      ? 0.5
-      : Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 3600 * 24)) + 1
+    // --- HAPUS PERHITUNGAN diffDays YANG SALAH DARI SINI ---
+    // const diffDays = halfDay
+    //   ? 0.5
+    //   : Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 3600 * 24)) + 1
 
-    if (leaveType === 'Cuti Tahunan' && leaveBalance !== null && annualLeaveCut && diffDays > leaveBalance) {
-      return toast.error('Sisa cuti tahunan tidak mencukupi')
-    }
+    // --- HAPUS VALIDASI YANG SALAH. BIARKAN BACKEND YANG MEMVALIDASI ---
+    // if (leaveType === 'Cuti Tahunan' && leaveBalance !== null && annualLeaveCut && diffDays > leaveBalance) {
+    //   return toast.error('Sisa cuti tahunan tidak mencukupi')
+    // }
 
     setLoading(true)
 
+    // Logika overlap ini masih oke
     const overlap = leaveRequests
-      .filter(lr => lr.status === 'Menunggu Persetujuan Kepala')
+      .filter(lr => lr.status === 'Menunggu Persetujuan Kepala') // Anda mungkin perlu sesuaikan status ini
       .some(lr => (new Date(startDate) <= new Date(lr.end_date)) && (new Date(endDate) >= new Date(lr.start_date)))
 
     if (overlap) {
@@ -163,6 +172,7 @@ export default function PengajuanCutiPage() {
       return
     }
 
+    // Panggil RPC. Data durasi akan dihitung di backend oleh trigger.
     const { data, error } = await supabase.rpc('submit_leave', {
       p_user_id: userId,
       p_leave_type: leaveType,
@@ -175,7 +185,10 @@ export default function PengajuanCutiPage() {
       p_annual_leave_cut: annualLeaveCut,
     })
 
-    if (error) toast.error(`Gagal submit: ${error.message}`)
+    if (error) {
+       // Jika backend melempar error (misal: 'Sisa cuti tidak mencukupi'), akan ditangkap di sini
+      toast.error(`Gagal submit: ${error.message}`)
+    }
     else {
       toast.success(data?.[0]?.message || 'Pengajuan berhasil dikirim')
       setLeaveType('')
@@ -185,16 +198,16 @@ export default function PengajuanCutiPage() {
       setAddress('')
       setHalfDay(false)
       setHalfDayShift('')
-      fetchLeaveRequests()
+      fetchLeaveRequests() // Refresh riwayat
     }
 
     setLoading(false)
   }
 
   const filteredRequests = leaveRequests.filter((lr) =>
-    lr.leave_type.toLowerCase().includes(search.toLowerCase()) ||
-    lr.reason.toLowerCase().includes(search.toLowerCase()) ||
-    lr.status.toLowerCase().includes(search.toLowerCase())
+    (lr.leave_type && lr.leave_type.toLowerCase().includes(search.toLowerCase())) ||
+    (lr.reason && lr.reason.toLowerCase().includes(search.toLowerCase())) ||
+    (lr.status && lr.status.toLowerCase().includes(search.toLowerCase()))
   )
 
   if (!mounted) return null
@@ -304,65 +317,68 @@ export default function PengajuanCutiPage() {
         </CardContent>
       </Card>
 
-     {/* RIWAYAT */}
-<Card className="shadow-sm border border-gray-200">
-  <CardHeader className="flex flex-col sm:flex-row justify-between items-center gap-2">
-    <CardTitle className="text-lg font-semibold text-gray-800">Riwayat Pengajuan</CardTitle>
-    <input
-      type="text"
-      placeholder="Cari data..."
-      className="border p-2 rounded-md focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
-      value={search}
-      onChange={(e) => setSearch(e.target.value)}
-    />
-  </CardHeader>
-  <CardContent>
-    {filteredRequests.length === 0 ? (
-      <p className="text-gray-600 text-sm text-center py-2">Belum ada pengajuan</p>
-    ) : (
-      <div className="overflow-x-auto md:overflow-visible w-full max-w-full">
-        <div className="min-w-[600px] md:min-w-0">
-          <table className="w-full table-auto border-collapse text-xs sm:text-sm text-center">
-            <thead className="bg-gray-100 text-gray-700">
-              <tr>
-                <th className="p-2 border">Jenis Cuti</th>
-                <th className="p-2 border">Tanggal</th>
-                <th className="p-2 border">Durasi</th>
-                <th className="p-2 border">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRequests.map((lr) => (
-                <tr key={lr.id} className="hover:bg-gray-50 transition">
-                  <td className="p-2 border">{lr.leave_type}</td>
-                  <td className="p-2 border">
-                    {lr.start_date} – {lr.end_date}
-                  </td>
-                  <td className="p-2 border">
-                    {lr.half_day ? '½ Hari' : `${lr.leave_days} Hari`}
-                  </td>
-                  <td className="p-2 border">
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs ${
-                        lr.status === 'Disetujui'
-                          ? 'bg-green-200 text-green-800'
-                          : lr.status === 'Ditolak'
-                          ? 'bg-red-200 text-red-800'
-                          : 'bg-yellow-200 text-yellow-800'
-                      }`}
-                    >
-                      {lr.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    )}
-  </CardContent>
-</Card>
+      {/* RIWAYAT */}
+      <Card className="shadow-sm border border-gray-200">
+        <CardHeader className="flex flex-col sm:flex-row justify-between items-center gap-2">
+          <CardTitle className="text-lg font-semibold text-gray-800">Riwayat Pengajuan</CardTitle>
+          <input
+            type="text"
+            placeholder="Cari data..."
+            className="border p-2 rounded-md focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </CardHeader>
+        <CardContent>
+          {filteredRequests.length === 0 ? (
+            <p className="text-gray-600 text-sm text-center py-2">Belum ada pengajuan</p>
+          ) : (
+            <div className="overflow-x-auto md:overflow-visible w-full max-w-full">
+              <div className="min-w-[600px] md:min-w-0">
+                <table className="w-full table-auto border-collapse text-xs sm:text-sm text-center">
+                  <thead className="bg-gray-100 text-gray-700">
+                    <tr>
+                      <th className="p-2 border">Jenis Cuti</th>
+                      <th className="p-2 border">Tanggal</th>
+                      <th className="p-2 border">Durasi</th>
+                      <th className="p-2 border">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRequests.map((lr) => (
+                      <tr key={lr.id} className="hover:bg-gray-50 transition">
+                        <td className="p-2 border">{lr.leave_type}</td>
+                        <td className="p-2 border">
+                          {lr.start_date} – {lr.end_date}
+                        </td>
+                        
+                        {/* =================== PERBAIKAN 3: TAMPILKAN DURASI YANG BENAR =================== */}
+                        <td className="p-2 border">
+                          {lr.half_day ? '½ Hari' : `${lr.durasi_hari_kerja ?? '?'} Hari`}
+                        </td>
+                        
+                        <td className="p-2 border">
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs ${
+                              lr.status === 'Disetujui'
+                                ? 'bg-green-200 text-green-800'
+                                : lr.status === 'Ditolak'
+                                ? 'bg-red-200 text-red-800'
+                                : 'bg-yellow-200 text-yellow-800'
+                            }`}
+                          >
+                            {lr.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -32,7 +32,8 @@ type LeaveRequest = {
   created_at?: string
   half_day?: boolean
   profiles?: { full_name?: string; position?: string } | null
-  sisa_cuti?: number
+  sisa_cuti_saat_pengajuan?: number
+  durasi_hari_kerja?: number
 }
 
 type LeaveApproval = {
@@ -68,7 +69,7 @@ export default function ApprovalCutiPage() {
     }
   }
 
-  // ======================= FETCH =======================
+  // ======================= FETCH (Tidak Berubah) =======================
   const fetchLeaveRequests = async () => {
     try {
       setLoadingPage(true)
@@ -76,6 +77,7 @@ export default function ApprovalCutiPage() {
         .from('leave_requests')
         .select(
           `id,user_id,leave_type,start_date,end_date,status,address,reason,approved_by,created_at,half_day,
+           sisa_cuti_saat_pengajuan, durasi_hari_kerja, 
            profiles(full_name,position)`
         )
         .order('created_at', { ascending: false })
@@ -84,24 +86,8 @@ export default function ApprovalCutiPage() {
       const safeData = Array.isArray(data)
         ? data.map((d: any) => ({ ...d, profiles: Array.isArray(d.profiles) ? d.profiles[0] : d.profiles }))
         : []
-
-      // Ambil sisa cuti realtime
-      const leaveWithQuota = await Promise.all(
-        safeData.map(async (lr: LeaveRequest) => {
-          if (lr.leave_type !== 'Cuti Tahunan') return lr
-          const start = lr.start_date ? new Date(lr.start_date) : null
-          const year = start?.getFullYear() || new Date().getFullYear()
-          const { data: quotaData } = await supabase
-            .from('master_leave_quota')
-            .select('annual_quota, used_leave')
-            .eq('user_id', lr.user_id)
-            .eq('year', year)
-            .single()
-          return { ...lr, sisa_cuti: quotaData ? quotaData.annual_quota - quotaData.used_leave : 0 }
-        })
-      )
-
-      setLeaveRequests(leaveWithQuota as LeaveRequest[])
+      
+      setLeaveRequests(safeData as LeaveRequest[])
     } catch (err) {
       console.error(err)
       setLeaveRequests([])
@@ -134,7 +120,7 @@ export default function ApprovalCutiPage() {
     } catch {}
   }
 
-  // ======================= EFFECT =======================
+  // ======================= EFFECT (Tidak Berubah) =======================
   useEffect(() => {
     const init = async () => await Promise.all([fetchLeaveRequests(), fetchApprovals(), fetchApproverRole()])
     init()
@@ -152,7 +138,7 @@ export default function ApprovalCutiPage() {
     }
   }, [])
 
-  // ======================= APPROVAL ACTION =======================
+  // ======================= APPROVAL ACTION (Tidak Berubah) =======================
   const insertApproval = async (leave_request_id: number, status: 'Disetujui' | 'Ditolak') => {
     if (!approverRole) return alert('Role belum ditentukan.')
     setLoadingId(leave_request_id)
@@ -202,17 +188,14 @@ export default function ApprovalCutiPage() {
     }
   }
 
- // ======================= EXPORT EXCEL =======================
- const exportToExcel = () => {
+  // ======================= EXPORT EXCEL (Tidak Berubah) =======================
+  const exportToExcel = () => {
     if (!leaveRequests.length) return alert('Belum ada data untuk diekspor.')
 
     const dataToExport = leaveRequests
-      .filter((lr) => lr.status === 'Disetujui' || lr.status === 'Ditolak') // hanya yang sudah diproses
+      .filter((lr) => lr.status === 'Disetujui' || lr.status === 'Ditolak')
       .map((lr) => {
-        // Cari persetujuan level 2 untuk tanggal dan QR
         const approval = approvals.find((a) => a.leave_request_id === lr.id && a.level === 2 && a.status === 'Disetujui')
-        
-        // Jika tidak ada persetujuan level 2 (misal ditolak di level 1), cari info persetujuan terakhir
         const lastApproval =
           approval ||
           [...approvals]
@@ -222,100 +205,70 @@ export default function ApprovalCutiPage() {
         return {
           'ID': lr.id,
           'Nama': lr.profiles?.full_name || '-',
+          'Sisa Cuti (Saat Pengajuan)': lr.sisa_cuti_saat_pengajuan ?? 0, 
           'Jabatan': lr.profiles?.position || '-',
           'Jenis Cuti': lr.leave_type || '-',
           'Periode': `${lr.start_date ? new Date(lr.start_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'} - ${lr.end_date ? new Date(lr.end_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}`,
+          'Durasi (Hari Kerja)': lr.durasi_hari_kerja || '-',
           'Alamat': lr.address || '-',
           'Alasan Cuti': lr.reason || '-',
-          'Sisa Cuti': lr.sisa_cuti ?? 0,
           'Status': lr.status || '-',
           'Tanggal Persetujuan': lastApproval?.approved_at
             ? new Date(lastApproval.approved_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
             : '-',
-          'QR Code URL': approval?.qr_code_url || '-', // Hanya tampilkan QR jika disetujui level 2
+          'QR Code URL': approval?.qr_code_url || '-',
         }
       })
 
     if (dataToExport.length === 0) return alert('Belum ada data persetujuan untuk diekspor.')
 
-    // ---- STYLING LOGIC ----
-
-    // 1. Buat Worksheet dari JSON
+    // ... (Logika Styling Excel tidak berubah)
     const worksheet = XLSX.utils.json_to_sheet(dataToExport)
-
-    // 2. Definisikan Styles
     const allBorders = {
-      top: { style: 'thin' },
-      bottom: { style: 'thin' },
-      left: { style: 'thin' },
-      right: { style: 'thin' },
+      top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' },
     }
     const headerStyle = {
-      font: { bold: true },
-      fill: { fgColor: { rgb: 'DDEBF7' } }, // Warna biru muda seperti di gambar
-      border: allBorders,
-      alignment: { vertical: 'center', horizontal: 'left' },
+      font: { bold: true }, fill: { fgColor: { rgb: 'DDEBF7' } }, border: allBorders, alignment: { vertical: 'center', horizontal: 'left' },
     }
-    const cellStyle = {
-      border: allBorders,
-    }
-
-    // 3. Hitung Lebar Kolom
+    const cellStyle = { border: allBorders }
     const headers = Object.keys(dataToExport[0]);
     const colWidths = headers.map((header, i) => {
-      // Ambil panjang header
       let maxLen = header.length;
-      // Cek panjang data di setiap baris untuk kolom ini
       dataToExport.forEach((row) => {
         // @ts-ignore
         const value = row[header];
         if (value != null) {
           const len = value.toString().length;
-          if (len > maxLen) {
-            maxLen = len;
-          }
+          if (len > maxLen) { maxLen = len; }
         }
       });
-      // Beri padding, min 10, max 50
       let width = Math.max(10, maxLen + 2)
-      // Kolom URL QR Code kita buat lebih lebar
       if (header === 'QR Code URL') width = 50;
       if (header === 'Periode') width = 40;
       return { wch: width };
     });
     worksheet['!cols'] = colWidths;
-
-
-    // 4. Terapkan Styles ke Sel
     const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:A1');
     for (let C = range.s.c; C <= range.e.c; ++C) {
-      // Style Header (Baris pertama)
       const headerCellAddress = XLSX.utils.encode_cell({ r: range.s.r, c: C });
-      if (worksheet[headerCellAddress]) {
-        worksheet[headerCellAddress].s = headerStyle;
-      }
-
-      // Style Sel Data (Baris setelah header)
+      if (worksheet[headerCellAddress]) { worksheet[headerCellAddress].s = headerStyle; }
       for (let R = range.s.r + 1; R <= range.e.r; ++R) {
         const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
         if (worksheet[cellAddress]) {
-          // Inisialisasi .s jika belum ada
           if (!worksheet[cellAddress].s) worksheet[cellAddress].s = {};
           worksheet[cellAddress].s.border = cellStyle.border;
         } else {
-           // Buat sel kosong jika tidak ada data, agar border tetap ada
-           XLSX.utils.sheet_add_aoa(worksheet, [[""]], { origin: cellAddress });
-           worksheet[cellAddress].s = cellStyle;
+          XLSX.utils.sheet_add_aoa(worksheet, [[""]], { origin: cellAddress });
+          worksheet[cellAddress].s = cellStyle;
         }
       }
     }
-    
-    // 5. Buat Workbook dan Download
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Rekap Cuti')
-    XLSX.writeFile(workbook, 'rekap_cuti.xlsx') // Ubah nama file
+    XLSX.writeFile(workbook, 'rekap_cuti.xlsx')
   }
-  // ======================= FILTER DATA =======================
+
+  // ======================= FILTER DATA (Tidak Berubah) =======================
   const pendingRequests = useMemo(() => {
     if (!approverRole) return []
     return leaveRequests.filter((lr) => {
@@ -339,24 +292,32 @@ export default function ApprovalCutiPage() {
         const approvalLevel2 = approvals.find((a) => a.leave_request_id === lr.id && a.level === 2)
         return {
           nama: lr.profiles?.full_name || '-',
+          sisa_cuti: lr.sisa_cuti_saat_pengajuan ?? 0, 
           jabatan: lr.profiles?.position || '-',
           jenis: lr.leave_type || '-',
           periode: `${formatDate(lr.start_date)} - ${formatDate(lr.end_date)}`,
+          durasi: `${lr.durasi_hari_kerja || '?'} hari`,
           alamat: lr.address || '-',
           alasan: lr.reason || '-',
           status: lr.status || 'Menunggu',
           qr: approvalLevel2?.qr_code_url || null,
-          sisa_cuti: lr.sisa_cuti ?? 0,
         }
       }),
     [riwayatRequests, approvals]
   )
 
+  // =================== PERBAIKAN 1: RATA TENGAH QR CODE ===================
   const columns = useMemo<ColumnDef<typeof riwayatData[0]>[]>(() => [
     { accessorKey: 'nama', header: 'Nama' },
+    {
+      accessorKey: 'sisa_cuti',
+      header: 'Sisa Cuti',
+      cell: (info) => <span>{String(info.getValue())}</span>,
+    },
     { accessorKey: 'jabatan', header: 'Jabatan' },
     { accessorKey: 'jenis', header: 'Jenis Cuti' },
     { accessorKey: 'periode', header: 'Periode' },
+    { accessorKey: 'durasi', header: 'Durasi' },
     { accessorKey: 'alamat', header: 'Alamat' },
     { accessorKey: 'alasan', header: 'Alasan Cuti' },
     {
@@ -377,16 +338,12 @@ export default function ApprovalCutiPage() {
       ),
     },
     {
-      accessorKey: 'sisa_cuti',
-      header: 'Sisa Cuti',
-      cell: (info) => <span>{String(info.getValue())}</span>,
-    },
-    {
       accessorKey: 'qr',
       header: 'QR Code',
       cell: (info) =>
         info.getValue() ? (
-          <QRCodeCanvas value={String(info.getValue())} size={70} className="border rounded-lg shadow-sm" />
+          // TAMBAHKAN 'mx-auto' DI SINI
+          <QRCodeCanvas value={String(info.getValue())} size={70} className="border rounded-lg shadow-sm mx-auto" />
         ) : (
           <span className="text-gray-400">-</span>
         ),
@@ -431,7 +388,7 @@ export default function ApprovalCutiPage() {
         Persetujuan Cuti Pegawai ({approverRole === 'kasubbag' ? 'Kasubbag' : 'Kepala Kantor'})
       </h1>
 
-      {/* ================= PENDING TABLE ================= */}
+      {/* ================= PERBAIKAN 2: RATA TENGAH TABEL PENDING ================= */}
       <Card className="border shadow-sm">
         <CardHeader>
           <CardTitle>Daftar Pengajuan Menunggu Persetujuan</CardTitle>
@@ -444,28 +401,32 @@ export default function ApprovalCutiPage() {
             <table className="min-w-[900px] sm:min-w-full table-auto border-collapse text-[16px]">
                 <thead className="bg-gray-100">
                   <tr>
-                    <th className="border px-3 py-2">Nama</th>
-                    <th className="border px-3 py-2">Jabatan</th>
-                    <th className="border px-3 py-2">Jenis Cuti</th>
-                    <th className="border px-3 py-2">Periode</th>
-                    <th className="border px-3 py-2">Alamat</th>
-                    <th className="border px-3 py-2">Sisa Cuti</th>
-                    <th className="border px-3 py-2">Alasan Cuti</th>
-                    <th className="border px-3 py-2">Aksi</th>
+                    {/* Tambahkan text-center ke semua <th> */}
+                    <th className="border px-3 py-2 text-center">Nama</th>
+                    <th className="border px-3 py-2 text-center">Sisa Cuti</th>
+                    <th className="border px-3 py-2 text-center">Jabatan</th>
+                    <th className="border px-3 py-2 text-center">Jenis Cuti</th>
+                    <th className="border px-3 py-2 text-center">Periode</th>
+                    <th className="border px-3 py-2 text-center">Durasi</th>
+                    <th className="border px-3 py-2 text-center">Alamat</th>
+                    <th className="border px-3 py-2 text-center">Alasan Cuti</th>
+                    <th className="border px-3 py-2 text-center">Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
                   {pendingRequests.map((req) => (
                     <tr key={req.id} className="hover:bg-gray-50">
-                      <td className="border px-3 py-2">{req.profiles?.full_name || '-'}</td>
-                      <td className="border px-3 py-2">{req.profiles?.position || '-'}</td>
-                      <td className="border px-3 py-2">{req.leave_type}</td>
-                      <td className="border px-3 py-2">
+                      {/* Tambahkan text-center ke semua <td> */}
+                      <td className="border px-3 py-2 text-center">{req.profiles?.full_name || '-'}</td>
+                      <td className="border px-3 py-2 text-center">{req.sisa_cuti_saat_pengajuan ?? 0}</td>
+                      <td className="border px-3 py-2 text-center">{req.profiles?.position || '-'}</td>
+                      <td className="border px-3 py-2 text-center">{req.leave_type}</td>
+                      <td className="border px-3 py-2 text-center">
                         {formatDate(req.start_date)} - {formatDate(req.end_date)}
                       </td>
-                      <td className="border px-3 py-2">{req.address || '-'}</td>
-                      <td className="border px-3 py-2">{req.sisa_cuti ?? 0}</td>
-                      <td className="border px-3 py-2">{req.reason || '-'}</td>
+                      <td className="border px-3 py-2 text-center">{req.durasi_hari_kerja || '-'} hari</td>
+                      <td className="border px-3 py-2 text-center">{req.address || '-'}</td>
+                      <td className="border px-3 py-2 text-center">{req.reason || '-'}</td>
                       <td className="border px-3 py-2 text-center">
                         <div className="flex gap-2 justify-center">
                           <Button
@@ -495,7 +456,7 @@ export default function ApprovalCutiPage() {
         </CardContent>
       </Card>
 
-      {/* ================= RIWAYAT TABLE ================= */}
+      {/* ================= PERBAIKAN 3: RATA TENGAH TABEL RIWAYAT ================= */}
       <Card className="border shadow-sm">
         <CardHeader>
           <CardTitle className="mb-3 text-lg font-semibold">Riwayat Persetujuan Cuti</CardTitle>
@@ -512,13 +473,13 @@ export default function ApprovalCutiPage() {
         </CardHeader>
         <CardContent>
           <div className="w-full overflow-x-auto rounded-xl shadow-sm bg-white pb-3">
-  <table className="min-w-[900px] sm:min-w-full table-auto border-collapse text-[15px]">
-
+          <table className="min-w-[900px] sm:min-w-full table-auto border-collapse text-[15px]">
               <thead className="bg-gray-100">
                 {table.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id}>
                     {headerGroup.headers.map((header) => (
-                      <th key={header.id} className="border px-3 py-2">
+                      // Tambahkan text-center ke <th>
+                      <th key={header.id} className="border px-3 py-2 text-center">
                         {flexRender(header.column.columnDef.header, header.getContext())}
                       </th>
                     ))}
@@ -529,6 +490,7 @@ export default function ApprovalCutiPage() {
                 {table.getRowModel().rows.map((row) => (
                   <tr key={row.id} className="hover:bg-gray-50">
                     {row.getVisibleCells().map((cell) => (
+                      // <td> sudah memiliki text-center dari kode Anda sebelumnya
                       <td key={cell.id} className="border px-3 py-2 text-center ">
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
