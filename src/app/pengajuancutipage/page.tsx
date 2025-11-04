@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import toast, { Toaster } from 'react-hot-toast'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Upload } from 'lucide-react' // Import Ikon Upload
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 
-// =================== PERBAIKAN 1: UBAH TIPE DATA ===================
+// Tipe data sudah benar dari kode Anda
 type LeaveRequest = {
   id: number
   leave_type: string
@@ -20,7 +20,7 @@ type LeaveRequest = {
   half_day: boolean
   half_day_shift: string | null
   annual_leave_cut: boolean
-  durasi_hari_kerja?: number // <-- DIUBAH: Ganti leave_days dengan ini
+  durasi_hari_kerja?: number
 }
 
 export default function PengajuanCutiPage() {
@@ -40,9 +40,13 @@ export default function PengajuanCutiPage() {
   const [loading, setLoading] = useState(false)
   const [leaveBalance, setLeaveBalance] = useState<number | null>(null)
 
+  // =================== BARU: State untuk file upload ===================
+  const [suratSakitFile, setSuratSakitFile] = useState<File | null>(null)
+  // =================================================================
+
   useEffect(() => setMounted(true), [])
 
-  // =================== AMBIL USER & KUOTA ===================
+  // =================== AMBIL USER & KUOTA (Tidak Berubah) ===================
   useEffect(() => {
     if (!mounted) return
     const fetchUserAndQuota = async () => {
@@ -71,11 +75,10 @@ export default function PengajuanCutiPage() {
     fetchUserAndQuota()
   }, [mounted, router])
 
-  // =================== PERBAIKAN 2: FETCH RIWAYAT ===================
+  // =================== FETCH RIWAYAT (Tidak Berubah) ===================
   const fetchLeaveRequests = async () => {
     if (!userId) return
 
-    // Ambil kolom yang benar, jangan 'select(*)'
     const { data: requests, error } = await supabase
       .from('leave_requests')
       .select(
@@ -99,7 +102,7 @@ export default function PengajuanCutiPage() {
       .select('leave_request_id, level, status')
       .in('leave_request_id', requests.map(r => r.id))
 
-    const merged = requests.map((req: any) => { // Ubah ke 'any' untuk proses mapping
+    const merged = requests.map((req: any) => {
       const level2 = approvals?.find(a => a.leave_request_id === req.id && a.level === 2)
       const level1 = approvals?.find(a => a.leave_request_id === req.id && a.level === 1)
 
@@ -107,23 +110,17 @@ export default function PengajuanCutiPage() {
       if (level2?.status === 'Disetujui') finalStatus = 'Disetujui'
       else if (level2?.status === 'Ditolak') finalStatus = 'Ditolak'
       else if (level1?.status === 'Ditolak') finalStatus = 'Ditolak'
-      else if (level1?.status === 'Disetujui') finalStatus = 'Disetujui' // Anda bisa ganti jadi 'Menunggu Atasan' jika mau
+      else if (level1?.status === 'Disetujui') finalStatus = 'Disetujui' 
 
-      // --- HAPUS PERHITUNGAN diffDays YANG SALAH ---
-      // const diffDays = req.half_day
-      //   ? 0.5
-      //   : Math.ceil((new Date(req.end_date).getTime() - new Date(req.start_date).getTime()) / (1000 * 3600 * 24)) + 1
-      
-      // Cukup kembalikan status yang baru
       return { ...req, status: finalStatus }
     })
 
-    setLeaveRequests(merged as LeaveRequest[]) // Cast ke Tipe yang sudah benar
+    setLeaveRequests(merged as LeaveRequest[])
   }
 
   useEffect(() => { fetchLeaveRequests() }, [userId])
 
-  // =================== AUTO REFRESH KUOTA ===================
+  // =================== AUTO REFRESH KUOTA (Tidak Berubah) ===================
   useEffect(() => {
     if (!mounted || !userId) return
     const fetchQuota = async () => {
@@ -140,40 +137,62 @@ export default function PengajuanCutiPage() {
       }
     }
     fetchQuota()
-  }, [mounted, userId, leaveRequests]) // auto-refresh saat leaveRequests berubah
+  }, [mounted, userId, leaveRequests])
 
-  // =================== PERBAIKAN 4: SUBMIT PENGAJUAN ===================
+  // =================== SUBMIT PENGAJUAN (DIMODIFIKASI TOTAL) ===================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!leaveType || !startDate || !endDate || !reason || !address)
       return toast.error('Semua field wajib diisi')
     if (!userId) return toast.error('User belum terdeteksi')
-
-    // --- HAPUS PERHITUNGAN diffDays YANG SALAH DARI SINI ---
-    // const diffDays = halfDay
-    //   ? 0.5
-    //   : Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 3600 * 24)) + 1
-
-    // --- HAPUS VALIDASI YANG SALAH. BIARKAN BACKEND YANG MEMVALIDASI ---
-    // if (leaveType === 'Cuti Tahunan' && leaveBalance !== null && annualLeaveCut && diffDays > leaveBalance) {
-    //   return toast.error('Sisa cuti tahunan tidak mencukupi')
-    // }
-
+    
+    // Validasi Sisa Cuti - Sebaiknya dihapus dari frontend
+    // Biarkan backend (trigger/RPC) yang melakukan validasi
+    
     setLoading(true)
 
-    // Logika overlap ini masih oke
+    // 1. Logika Upload File
+    let fileUrl: string | null = null;
+    if (leaveType === 'Cuti Sakit' && suratSakitFile) {
+      const loadingToast = toast.loading('Mengupload surat dokter...');
+      
+      // Buat nama file yang unik
+      const fileName = `${userId}/${Date.now()}-${suratSakitFile.name}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('surat_sakit') // Nama bucket Anda
+        .upload(fileName, suratSakitFile);
+
+      if (uploadError) {
+        toast.dismiss(loadingToast);
+        toast.error(`Gagal upload file: ${uploadError.message}`);
+        setLoading(false);
+        return; // Hentikan submit jika upload gagal
+      }
+      
+      // Dapatkan URL publik dari file yang baru di-upload
+      const { data: publicUrlData } = supabase.storage
+        .from('surat_sakit')
+        .getPublicUrl(fileName);
+        
+      fileUrl = publicUrlData.publicUrl;
+      toast.dismiss(loadingToast);
+    }
+
+    // 2. Logika Overlap (Masih sama)
     const overlap = leaveRequests
-      .filter(lr => lr.status === 'Menunggu Persetujuan Kepala') // Anda mungkin perlu sesuaikan status ini
+      .filter(lr => lr.status === 'Menunggu Persetujuan Kepala' || lr.status === 'Menunggu') // Sesuaikan status
       .some(lr => (new Date(startDate) <= new Date(lr.end_date)) && (new Date(endDate) >= new Date(lr.start_date)))
 
     if (overlap) {
-      toast.error('❌ Anda masih punya pengajuan aktif yang overlap dengan tanggal ini.')
+      toast.error('❌ Anda masih punya pengajuan aktif yang tumpang tindih dengan tanggal ini.')
       setLoading(false)
       return
     }
 
-    // Panggil RPC. Data durasi akan dihitung di backend oleh trigger.
-    const { data, error } = await supabase.rpc('submit_leave', {
+    // 3. Panggil RPC dengan parameter baru
+    // PERBAIKAN TYPO: Ganti 'submit_leave' ke 'submit_leave_request'
+    const { data, error } = await supabase.rpc('submit_leave_request', {
       p_user_id: userId,
       p_leave_type: leaveType,
       p_start_date: startDate,
@@ -183,14 +202,16 @@ export default function PengajuanCutiPage() {
       p_half_day: halfDay,
       p_half_day_shift: halfDayShift || null,
       p_annual_leave_cut: annualLeaveCut,
+      p_surat_sakit_url: fileUrl, // <-- KIRIM URL FILE
     })
 
     if (error) {
-       // Jika backend melempar error (misal: 'Sisa cuti tidak mencukupi'), akan ditangkap di sini
       toast.error(`Gagal submit: ${error.message}`)
-    }
-    else {
-      toast.success(data?.[0]?.message || 'Pengajuan berhasil dikirim')
+    } else {
+      // Logika toast ini sekarang akan cocok dengan return type RPC
+      toast.success(data?.[0]?.error_message || 'Pengajuan berhasil dikirim')
+      
+      // Reset form
       setLeaveType('')
       setStartDate('')
       setEndDate('')
@@ -198,6 +219,7 @@ export default function PengajuanCutiPage() {
       setAddress('')
       setHalfDay(false)
       setHalfDayShift('')
+      setSuratSakitFile(null) // <-- Reset state file
       fetchLeaveRequests() // Refresh riwayat
     }
 
@@ -277,6 +299,32 @@ export default function PengajuanCutiPage() {
                         placeholder="Tuliskan alasan cuti..." />
             </div>
 
+            {/* =================== BARU: Form Upload Surat Sakit =================== */}
+            {leaveType === 'Cuti Sakit' && (
+              <div className="p-4 border-l-4 border-blue-500 bg-blue-50 rounded-md">
+                <label className="font-medium text-blue-700">Surat Keterangan Dokter</label>
+                <p className="text-xs text-gray-600 mb-2">
+                  Upload surat dokter jika ada. Jika tidak, cuti akan memotong kuota Cuti Tahunan Anda.
+                </p>
+                <label htmlFor="file-upload" className={`
+                  w-full flex items-center justify-center gap-2 px-4 py-2 border rounded-md cursor-pointer 
+                  ${suratSakitFile ? 'bg-green-100 text-green-700' : 'bg-gray-100 hover:bg-gray-200'}
+                `}>
+                  <Upload size={16} />
+                  <span>{suratSakitFile ? suratSakitFile.name : 'Pilih file...'}</span>
+                </label>
+                <input 
+                  id="file-upload"
+                  type="file" 
+                  className="hidden"
+                  accept="image/*,.pdf" // Hanya terima gambar atau PDF
+                  onChange={(e) => setSuratSakitFile(e.target.files ? e.target.files[0] : null)}
+                />
+              </div>
+            )}
+            {/* =================================================================== */}
+
+
             {/* Setengah hari */}
             <div className="flex items-center gap-2">
               <input type="checkbox" checked={halfDay} onChange={(e) => setHalfDay(e.target.checked)} />
@@ -317,7 +365,7 @@ export default function PengajuanCutiPage() {
         </CardContent>
       </Card>
 
-      {/* RIWAYAT */}
+      {/* RIWAYAT (Tidak Berubah) */}
       <Card className="shadow-sm border border-gray-200">
         <CardHeader className="flex flex-col sm:flex-row justify-between items-center gap-2">
           <CardTitle className="text-lg font-semibold text-gray-800">Riwayat Pengajuan</CardTitle>
@@ -351,12 +399,9 @@ export default function PengajuanCutiPage() {
                         <td className="p-2 border">
                           {lr.start_date} – {lr.end_date}
                         </td>
-                        
-                        {/* =================== PERBAIKAN 3: TAMPILKAN DURASI YANG BENAR =================== */}
                         <td className="p-2 border">
                           {lr.half_day ? '½ Hari' : `${lr.durasi_hari_kerja ?? '?'} Hari`}
                         </td>
-                        
                         <td className="p-2 border">
                           <span
                             className={`px-2 py-1 rounded-full text-xs ${

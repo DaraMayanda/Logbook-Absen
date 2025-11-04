@@ -32,8 +32,10 @@ type LeaveRequest = {
   created_at?: string
   half_day?: boolean
   profiles?: { full_name?: string; position?: string } | null
-  sisa_cuti_saat_pengajuan?: number
+  sisa_cuti_saat_pengajuan?: number // Untuk Riwayat (Snapshot)
   durasi_hari_kerja?: number
+  sisa_cuti_realtime?: number // Untuk Pending (Real-time)
+  surat_sakit_url?: string | null
 }
 
 type LeaveApproval = {
@@ -56,6 +58,10 @@ export default function ApprovalCutiPage() {
   const [loadingPage, setLoadingPage] = useState<boolean>(true)
   const [globalFilter, setGlobalFilter] = useState('')
 
+  // State untuk Filter Excel
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
   // ======================= HELPERS =======================
   const getApprovalRecord = (leaveId: number, level: 1 | 2) =>
     approvals.find((a) => a.leave_request_id === leaveId && a.level === level) || null
@@ -69,15 +75,17 @@ export default function ApprovalCutiPage() {
     }
   }
 
-  // ======================= FETCH (Tidak Berubah) =======================
+  // =================== FETCH (DIMODIFIKASI) ===================
   const fetchLeaveRequests = async () => {
     try {
       setLoadingPage(true)
+      // 1. Ambil data dasar
       const { data, error } = await supabase
         .from('leave_requests')
         .select(
           `id,user_id,leave_type,start_date,end_date,status,address,reason,approved_by,created_at,half_day,
            sisa_cuti_saat_pengajuan, durasi_hari_kerja, 
+           surat_sakit_url, 
            profiles(full_name,position)`
         )
         .order('created_at', { ascending: false })
@@ -87,7 +95,37 @@ export default function ApprovalCutiPage() {
         ? data.map((d: any) => ({ ...d, profiles: Array.isArray(d.profiles) ? d.profiles[0] : d.profiles }))
         : []
       
-      setLeaveRequests(safeData as LeaveRequest[])
+      // 2. Ambil data Sisa Cuti REAL-TIME
+      const currentYear = new Date().getFullYear();
+      const requestsWithRealtimeQuota = await Promise.all(
+        safeData.map(async (lr: LeaveRequest) => {
+          
+          // =================== INI PERBAIKANNYA ===================
+          // Kita perlu sisa cuti realtime jika jenisnya 'Cuti Tahunan' ATAU 'Cuti Sakit'
+          if (lr.leave_type !== 'Cuti Tahunan' && lr.leave_type !== 'Cuti Sakit') {
+          // ========================================================
+            return { ...lr, sisa_cuti_realtime: null }; // Jenis cuti lain (Melahirkan, dll) tidak perlu
+          }
+          
+          // Jika Cuti Tahunan atau Cuti Sakit, LANJUT ambil kuota
+          const { data: quotaData } = await supabase
+            .from('master_leave_quota')
+            .select('annual_quota, used_leave')
+            .eq('user_id', lr.user_id)
+            .eq('year', currentYear)
+            .single();
+            
+          let realtimeBalance = 0;
+          if (quotaData) {
+            realtimeBalance = quotaData.annual_quota - quotaData.used_leave;
+          }
+          
+          return { ...lr, sisa_cuti_realtime: realtimeBalance };
+        })
+      );
+      
+      setLeaveRequests(requestsWithRealtimeQuota as LeaveRequest[])
+
     } catch (err) {
       console.error(err)
       setLeaveRequests([])
@@ -120,7 +158,7 @@ export default function ApprovalCutiPage() {
     } catch {}
   }
 
-  // ======================= EFFECT (Tidak Berubah) =======================
+  // ======================= EFFECT =======================
   useEffect(() => {
     const init = async () => await Promise.all([fetchLeaveRequests(), fetchApprovals(), fetchApproverRole()])
     init()
@@ -138,7 +176,7 @@ export default function ApprovalCutiPage() {
     }
   }, [])
 
-  // ======================= APPROVAL ACTION (Tidak Berubah) =======================
+  // ======================= APPROVAL ACTION =======================
   const insertApproval = async (leave_request_id: number, status: 'Disetujui' | 'Ditolak') => {
     if (!approverRole) return alert('Role belum ditentukan.')
     setLoadingId(leave_request_id)
@@ -188,13 +226,25 @@ export default function ApprovalCutiPage() {
     }
   }
 
-  // ======================= EXPORT EXCEL (Tidak Berubah) =======================
+  // =================== EXPORT EXCEL ===================
   const exportToExcel = () => {
-    if (!leaveRequests.length) return alert('Belum ada data untuk diekspor.')
+    const monthName = new Date(selectedYear, selectedMonth - 1).toLocaleString('id-ID', { month: 'long' }).toUpperCase();
+    const yearName = selectedYear;
 
-    const dataToExport = leaveRequests
+    const filteredData = leaveRequests
       .filter((lr) => lr.status === 'Disetujui' || lr.status === 'Ditolak')
-      .map((lr) => {
+      .filter((lr) => {
+        if (!lr.start_date) return false;
+        const leaveStartDate = new Date(lr.start_date);
+        return leaveStartDate.getMonth() + 1 === selectedMonth && 
+               leaveStartDate.getFullYear() === selectedYear;
+      });
+
+    if (filteredData.length === 0) {
+      return alert(`Tidak ada data persetujuan untuk cuti yang dimulai di bulan ${monthName} ${yearName}.`);
+    }
+
+    const dataToExport = filteredData.map((lr) => {
         const approval = approvals.find((a) => a.leave_request_id === lr.id && a.level === 2 && a.status === 'Disetujui')
         const lastApproval =
           approval ||
@@ -205,35 +255,53 @@ export default function ApprovalCutiPage() {
         return {
           'ID': lr.id,
           'Nama': lr.profiles?.full_name || '-',
-          'Sisa Cuti (Saat Pengajuan)': lr.sisa_cuti_saat_pengajuan ?? 0, 
+          'Sisa Cuti (Saat Pengajuan)': lr.sisa_cuti_saat_pengajuan ?? 0,
           'Jabatan': lr.profiles?.position || '-',
           'Jenis Cuti': lr.leave_type || '-',
-          'Periode': `${lr.start_date ? new Date(lr.start_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'} - ${lr.end_date ? new Date(lr.end_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}`,
+          'Periode': `${lr.start_date ? new Date(lr.start_date).toLocaleDateString('id-ID') : '-'} - ${lr.end_date ? new Date(lr.end_date).toLocaleDateString('id-ID') : '-'}`,
           'Durasi (Hari Kerja)': lr.durasi_hari_kerja || '-',
+          'Status': lr.status || '-',
+          'Tanggal Persetujui': lastApproval?.approved_at
+            ? new Date(lastApproval.approved_at).toLocaleDateString('id-ID')
+            : '-',
           'Alamat': lr.address || '-',
           'Alasan Cuti': lr.reason || '-',
-          'Status': lr.status || '-',
-          'Tanggal Persetujuan': lastApproval?.approved_at
-            ? new Date(lastApproval.approved_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
-            : '-',
           'QR Code URL': approval?.qr_code_url || '-',
         }
       })
+    
+    const title = [`REKAPITULASI PERSETUJUAN CUTI PEGAWAI`];
+    const subTitle = [`BULAN: ${monthName} ${yearName}`];
+    const emptyRow: (string | number)[] = [];
+    const worksheet = XLSX.utils.aoa_to_sheet([title, subTitle, emptyRow]);
+    XLSX.utils.sheet_add_json(worksheet, dataToExport, { origin: 'A4' });
 
-    if (dataToExport.length === 0) return alert('Belum ada data persetujuan untuk diekspor.')
-
-    // ... (Logika Styling Excel tidak berubah)
-    const worksheet = XLSX.utils.json_to_sheet(dataToExport)
     const allBorders = {
       top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' },
-    }
+    };
+    const titleStyle = { 
+      font: { bold: true, sz: 16 }, 
+      alignment: { vertical: 'center', horizontal: 'center' } 
+    };
+    const subTitleStyle = { 
+      font: { bold: true, sz: 12 }, 
+      alignment: { vertical: 'center', horizontal: 'center' } 
+    };
     const headerStyle = {
-      font: { bold: true }, fill: { fgColor: { rgb: 'DDEBF7' } }, border: allBorders, alignment: { vertical: 'center', horizontal: 'left' },
-    }
-    const cellStyle = { border: allBorders }
+      font: { bold: true, color: { rgb: "FFFFFF" } },
+      fill: { fgColor: { rgb: '4F81BD' } },
+      border: allBorders,
+      alignment: { vertical: 'center', horizontal: 'center' },
+    };
+    const cellStyle = {
+      border: allBorders,
+      alignment: { vertical: 'top', horizontal: 'left', wrapText: true }
+    };
+
     const headers = Object.keys(dataToExport[0]);
-    const colWidths = headers.map((header, i) => {
-      let maxLen = header.length;
+    const numCols = headers.length;
+    const colWidths = headers.map((header) => {
+      let maxLen = header.length + 5;
       dataToExport.forEach((row) => {
         // @ts-ignore
         const value = row[header];
@@ -242,33 +310,53 @@ export default function ApprovalCutiPage() {
           if (len > maxLen) { maxLen = len; }
         }
       });
-      let width = Math.max(10, maxLen + 2)
-      if (header === 'QR Code URL') width = 50;
-      if (header === 'Periode') width = 40;
+      let width = Math.max(15, maxLen)
+      if (width > 50) width = 50;
       return { wch: width };
     });
     worksheet['!cols'] = colWidths;
+
     const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:A1');
-    for (let C = range.s.c; C <= range.e.c; ++C) {
-      const headerCellAddress = XLSX.utils.encode_cell({ r: range.s.r, c: C });
-      if (worksheet[headerCellAddress]) { worksheet[headerCellAddress].s = headerStyle; }
-      for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+    
+    worksheet['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: numCols - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: numCols - 1 } }
+    ];
+
+    if (!worksheet['A1']) worksheet['A1'] = {};
+    worksheet['A1'].s = titleStyle;
+    
+    if (!worksheet['A2']) worksheet['A2'] = {};
+    worksheet['A2'].s = subTitleStyle;
+
+    for (let C = 0; C < numCols; ++C) {
+      const headerCellAddress = XLSX.utils.encode_cell({ r: 3, c: C });
+      if (worksheet[headerCellAddress]) {
+        worksheet[headerCellAddress].s = headerStyle;
+      }
+    }
+    
+    for (let R = 4; R <= range.e.r; ++R) {
+      for (let C = 0; C < numCols; ++C) {
         const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
         if (worksheet[cellAddress]) {
-          if (!worksheet[cellAddress].s) worksheet[cellAddress].s = {};
-          worksheet[cellAddress].s.border = cellStyle.border;
+          if (!worksheet[cellAddress].s) worksheet[cellAddress].s = cellStyle;
+          else worksheet[cellAddress].s = { ...cellStyle, ...worksheet[cellAddress].s };
         } else {
           XLSX.utils.sheet_add_aoa(worksheet, [[""]], { origin: cellAddress });
           worksheet[cellAddress].s = cellStyle;
         }
       }
     }
-    const workbook = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Rekap Cuti')
-    XLSX.writeFile(workbook, 'rekap_cuti.xlsx')
-  }
 
-  // ======================= FILTER DATA (Tidak Berubah) =======================
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Rekap Cuti Bulanan');
+    XLSX.writeFile(workbook, `rekap_cuti_${monthName.toLowerCase()}_${yearName}.xlsx`);
+  }
+  // =================== AKHIR FUNGSI EXPORT ===================
+
+
+  // ======================= FILTER DATA =======================
   const pendingRequests = useMemo(() => {
     if (!approverRole) return []
     return leaveRequests.filter((lr) => {
@@ -286,13 +374,14 @@ export default function ApprovalCutiPage() {
     [leaveRequests]
   )
 
+  // RIWAYAT: Menggunakan sisa_cuti_saat_pengajuan (Snapshot)
   const riwayatData = useMemo(
     () =>
       riwayatRequests.map((lr) => {
         const approvalLevel2 = approvals.find((a) => a.leave_request_id === lr.id && a.level === 2)
         return {
           nama: lr.profiles?.full_name || '-',
-          sisa_cuti: lr.sisa_cuti_saat_pengajuan ?? 0, 
+          sisa_cuti: lr.sisa_cuti_saat_pengajuan ?? 0, // <-- Menggunakan SNAPSHOT
           jabatan: lr.profiles?.position || '-',
           jenis: lr.leave_type || '-',
           periode: `${formatDate(lr.start_date)} - ${formatDate(lr.end_date)}`,
@@ -306,7 +395,7 @@ export default function ApprovalCutiPage() {
     [riwayatRequests, approvals]
   )
 
-  // =================== PERBAIKAN 1: RATA TENGAH QR CODE ===================
+  // KOLOM RIWAYAT
   const columns = useMemo<ColumnDef<typeof riwayatData[0]>[]>(() => [
     { accessorKey: 'nama', header: 'Nama' },
     {
@@ -342,7 +431,6 @@ export default function ApprovalCutiPage() {
       header: 'QR Code',
       cell: (info) =>
         info.getValue() ? (
-          // TAMBAHKAN 'mx-auto' DI SINI
           <QRCodeCanvas value={String(info.getValue())} size={70} className="border rounded-lg shadow-sm mx-auto" />
         ) : (
           <span className="text-gray-400">-</span>
@@ -370,16 +458,41 @@ export default function ApprovalCutiPage() {
 
   return (
     <div className="p-6 space-y-8 text-[17px]">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col sm:flex-row items-center gap-2">
         <Button
           onClick={() => router.push('/dashboardadmin')}
           className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white"
         >
           <ArrowLeft className="w-4 h-4" /> Kembali ke Dashboard
         </Button>
-        <div className="ml-auto flex gap-2">
+
+        <div className="ml-auto flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <div className="flex-grow sm:flex-grow-0">
+            <select 
+              value={selectedMonth} 
+              onChange={(e) => setSelectedMonth(Number(e.target.value))}
+              className="w-full sm:w-auto border rounded-md px-2 py-2 text-base focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              {Array.from({ length: 12 }, (_, i) => (
+                <option key={i + 1} value={i + 1}>
+                  {new Date(0, i).toLocaleString('id-ID', { month: 'long' })}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-grow sm:flex-grow-0">
+            <select 
+              value={selectedYear} 
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              className="w-full sm:w-auto border rounded-md px-2 py-2 text-base focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value={new Date().getFullYear()}>{new Date().getFullYear()}</option>
+              <option value={new Date().getFullYear() - 1}>{new Date().getFullYear() - 1}</option>
+              <option value={new Date().getFullYear() - 2}>{new Date().getFullYear() - 2}</option>
+            </select>
+          </div>
           <Button onClick={exportToExcel} className="bg-blue-600 hover:bg-blue-700 text-white">
-            Export Rekap Approvals
+            Export Rekap Bulanan
           </Button>
         </div>
       </div>
@@ -388,7 +501,7 @@ export default function ApprovalCutiPage() {
         Persetujuan Cuti Pegawai ({approverRole === 'kasubbag' ? 'Kasubbag' : 'Kepala Kantor'})
       </h1>
 
-      {/* ================= PERBAIKAN 2: RATA TENGAH TABEL PENDING ================= */}
+      {/* ================= TABEL PENDING (Rata Tengah + Sisa Cuti Realtime + Cuti Sakit) ================= */}
       <Card className="border shadow-sm">
         <CardHeader>
           <CardTitle>Daftar Pengajuan Menunggu Persetujuan</CardTitle>
@@ -401,7 +514,6 @@ export default function ApprovalCutiPage() {
             <table className="min-w-[900px] sm:min-w-full table-auto border-collapse text-[16px]">
                 <thead className="bg-gray-100">
                   <tr>
-                    {/* Tambahkan text-center ke semua <th> */}
                     <th className="border px-3 py-2 text-center">Nama</th>
                     <th className="border px-3 py-2 text-center">Sisa Cuti</th>
                     <th className="border px-3 py-2 text-center">Jabatan</th>
@@ -416,9 +528,18 @@ export default function ApprovalCutiPage() {
                 <tbody>
                   {pendingRequests.map((req) => (
                     <tr key={req.id} className="hover:bg-gray-50">
-                      {/* Tambahkan text-center ke semua <td> */}
                       <td className="border px-3 py-2 text-center">{req.profiles?.full_name || '-'}</td>
-                      <td className="border px-3 py-2 text-center">{req.sisa_cuti_saat_pengajuan ?? 0}</td>
+                      
+                      {/* =================== PERBAIKAN TAMPILAN SISA CUTI =================== */}
+                      {/* Ini adalah logika yang sudah kita sepakati */}
+                      <td className="border px-3 py-2 text-center">
+                        { req.leave_type === 'Cuti Tahunan' || (req.leave_type === 'Cuti Sakit' && !req.surat_sakit_url) 
+                          ? (req.sisa_cuti_realtime ?? 0) // Tampilkan sisa cuti realtime
+                          : '-' // Tampilkan '-' jika Cuti Sakit+Surat atau Cuti Lainnya
+                        }
+                      </td>
+                      {/* =================================================================== */}
+                      
                       <td className="border px-3 py-2 text-center">{req.profiles?.position || '-'}</td>
                       <td className="border px-3 py-2 text-center">{req.leave_type}</td>
                       <td className="border px-3 py-2 text-center">
@@ -426,7 +547,29 @@ export default function ApprovalCutiPage() {
                       </td>
                       <td className="border px-3 py-2 text-center">{req.durasi_hari_kerja || '-'} hari</td>
                       <td className="border px-3 py-2 text-center">{req.address || '-'}</td>
-                      <td className="border px-3 py-2 text-center">{req.reason || '-'}</td>
+
+                      {/* Alasan Cuti DENGAN Status Surat Dokter */}
+                      <td className="border px-3 py-2 text-center">
+                        {req.reason || '-'}
+                        {req.leave_type === 'Cuti Sakit' && (
+                          req.surat_sakit_url ? (
+                            <a 
+                              href={req.surat_sakit_url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-xs text-blue-600 hover:underline block mt-1"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              (Lihat Surat Dokter)
+                            </a>
+                          ) : (
+                            <span className="text-xs text-red-600 block mt-1">
+                              (Tanpa Surat Dokter)
+                            </span>
+                          )
+                        )}
+                      </td>
+                      
                       <td className="border px-3 py-2 text-center">
                         <div className="flex gap-2 justify-center">
                           <Button
@@ -456,7 +599,7 @@ export default function ApprovalCutiPage() {
         </CardContent>
       </Card>
 
-      {/* ================= PERBAIKAN 3: RATA TENGAH TABEL RIWAYAT ================= */}
+      {/* ================= TABEL RIWAYAT (Rata Tengah + Sisa Cuti Snapshot) ================= */}
       <Card className="border shadow-sm">
         <CardHeader>
           <CardTitle className="mb-3 text-lg font-semibold">Riwayat Persetujuan Cuti</CardTitle>
@@ -478,7 +621,6 @@ export default function ApprovalCutiPage() {
                 {table.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id}>
                     {headerGroup.headers.map((header) => (
-                      // Tambahkan text-center ke <th>
                       <th key={header.id} className="border px-3 py-2 text-center">
                         {flexRender(header.column.columnDef.header, header.getContext())}
                       </th>
@@ -490,7 +632,6 @@ export default function ApprovalCutiPage() {
                 {table.getRowModel().rows.map((row) => (
                   <tr key={row.id} className="hover:bg-gray-50">
                     {row.getVisibleCells().map((cell) => (
-                      // <td> sudah memiliki text-center dari kode Anda sebelumnya
                       <td key={cell.id} className="border px-3 py-2 text-center ">
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>

@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import toast, { Toaster } from 'react-hot-toast'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Upload } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 
+// Tipe data (Tidak berubah)
 type PermissionRequest = {
   id: number
   jenis_izin: string
@@ -16,6 +17,8 @@ type PermissionRequest = {
   lampiran_url: string | null
   status: string
   created_at: string
+  durasi_hari_kerja?: number
+  potong_gaji?: boolean
 }
 
 export default function PengajuanIzinPage() {
@@ -33,7 +36,7 @@ export default function PengajuanIzinPage() {
 
   useEffect(() => setMounted(true), [])
 
-  // =================== AMBIL USER ===================
+  // AMBIL USER (Tidak berubah)
   useEffect(() => {
     if (!mounted) return
     const fetchUser = async () => {
@@ -44,13 +47,13 @@ export default function PengajuanIzinPage() {
     fetchUser()
   }, [mounted, router])
 
-  // =================== FETCH RIWAYAT ===================
+  // FETCH RIWAYAT (Tidak berubah)
   const fetchIzinRequests = async () => {
     if (!userId) return
 
     const { data: requests, error } = await supabase
       .from('permission_requests')
-      .select('*')
+      .select('id, jenis_izin, tanggal_mulai, tanggal_selesai, alasan, lampiran_url, status, created_at, durasi_hari_kerja, potong_gaji')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
 
@@ -87,7 +90,8 @@ export default function PengajuanIzinPage() {
 
   useEffect(() => { fetchIzinRequests() }, [userId])
 
-  // =================== SUBMIT PENGAJUAN ===================
+
+  // =================== SUBMIT PENGAJUAN (LOGIKA DIPERBAIKI) ===================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!jenisIzin || !tanggalMulai || !tanggalSelesai || !alasan)
@@ -97,64 +101,77 @@ export default function PengajuanIzinPage() {
     setLoading(true)
 
     try {
-      // Upload lampiran jika ada
+      // 1. Upload lampiran jika ada
       let lampiranUrl: string | null = null
       if (lampiran) {
+        const loadingToast = toast.loading('Mengupload lampiran...');
         const fileExt = lampiran.name.split('.').pop()
         const fileName = `${Date.now()}_${userId}.${fileExt}`
         const filePath = `izin_lampiran/${fileName}`
 
         const { error: uploadError } = await supabase.storage
-          .from('lampiran')
-          .upload(filePath, lampiran, { upsert: true })
+          .from('lampiran_izin')
+          .upload(filePath, lampiran);
 
         if (uploadError) throw uploadError
 
         const { data: publicUrl } = supabase.storage
-          .from('lampiran')
+          .from('lampiran_izin')
           .getPublicUrl(filePath)
 
         lampiranUrl = publicUrl.publicUrl
+        toast.dismiss(loadingToast);
       }
 
-      // Insert data ke permission_requests
-      const { error: insertError } = await supabase
-        .from('permission_requests')
-        .insert([{
-          user_id: userId,
-          jenis_izin: jenisIzin,
-          tanggal_mulai: tanggalMulai,
-          tanggal_selesai: tanggalSelesai,
-          alasan,
-          lampiran_url: lampiranUrl
-        }])
+      // 2. Panggil RPC
+      const { data, error: rpcError } = await supabase.rpc('submit_permission_request', {
+        p_user_id: userId,
+        p_jenis_izin: jenisIzin,
+        p_tanggal_mulai: tanggalMulai,
+        p_tanggal_selesai: tanggalSelesai,
+        p_alasan: alasan,
+        p_lampiran_url: lampiranUrl
+      })
 
-      if (insertError) throw insertError
+      if (rpcError) throw rpcError; // Menangkap error jaringan/SQL
+      
+      const rpcData = data?.[0];
 
-      toast.success('Pengajuan izin berhasil dikirim')
+      // --- INI PERBAIKANNYA ---
+      // Cek apakah request_id GAGAL (NULL), BUKAN apakah error_message ADA
+      if (!rpcData || rpcData.request_id === null) {
+        // Jika request_id null, BARU lempar error
+        throw new Error(rpcData?.error_message || 'Gagal mengajukan izin');
+      }
+      // --- AKHIR PERBAIKAN ---
+
+      // Jika lolos, berarti SUKSES
+      toast.success(rpcData.error_message || 'Pengajuan izin berhasil dikirim')
       setJenisIzin('')
       setTanggalMulai('')
       setTanggalSelesai('')
       setAlasan('')
       setLampiran(null)
       fetchIzinRequests()
+
     } catch (error: any) {
+      // Sekarang, 'catch' ini hanya akan menangkap error yang sesungguhnya
       console.error('Error submitting izin:', error.message)
-      toast.error('Gagal mengirim pengajuan')
+      toast.error(error.message || 'Gagal mengirim pengajuan')
     } finally {
       setLoading(false)
     }
   }
 
   const filteredRequests = izinRequests.filter((r) =>
-    r.jenis_izin.toLowerCase().includes(search.toLowerCase()) ||
-    r.alasan.toLowerCase().includes(search.toLowerCase()) ||
-    r.status.toLowerCase().includes(search.toLowerCase())
+    (r.jenis_izin && r.jenis_izin.toLowerCase().includes(search.toLowerCase())) ||
+    (r.alasan && r.alasan.toLowerCase().includes(search.toLowerCase())) ||
+    (r.status && r.status.toLowerCase().includes(search.toLowerCase()))
   )
 
   if (!mounted) return null
 
-  // =================== UI ===================
+  // =================== UI (Tidak Berubah) ===================
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
       <Toaster position="top-center" />
@@ -181,10 +198,13 @@ export default function PengajuanIzinPage() {
                 value={jenisIzin}
                 onChange={(e) => setJenisIzin(e.target.value)}
               >
-                <option value="">Pilih Jenis Izin</option>
-                <option value="Izin Sakit">Izin Sakit</option>
-                <option value="Izin Pribadi">Izin Pribadi</option>
-                <option value="Izin Dinas">Izin Dinas</option>
+                <option value="">Pilih Jenis Izin...</option>
+                <option value="Lupa Absen Masuk">Lupa Absen Masuk</option>
+                <option value="Lupa Absen Pulang">Lupa Absen Pulang</option>
+                <option value="Meninggalkan Kantor">Meninggalkan Kantor (Keperluan Pribadi)</option>
+                <option value="Keperluan Mendesak (Pribadi)">Keperluan Mendesak (Pribadi)</option>
+                <option value="Sakit (Tanpa Kuota Cuti)">Sakit (Tanpa Kuota Cuti Tahunan)</option>
+                <option value="Perjalanan Dinas">Perjalanan Dinas</option>
               </select>
             </div>
 
@@ -204,23 +224,28 @@ export default function PengajuanIzinPage() {
 
             {/* Alasan */}
             <div>
-              <label className="font-medium">Alasan Izin</label>
+              <label className="font-medium">Alasan / Keterangan</label>
               <textarea className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
                         value={alasan} onChange={(e) => setAlasan(e.target.value)}
-                        placeholder="Tuliskan alasan izin..." />
+                        placeholder="Tuliskan alasan/keterangan izin..." />
             </div>
 
             {/* Lampiran */}
             <div>
-              <label className="font-medium">Lampiran (opsional)</label>
+              <label className="font-medium">Lampiran (Opsional)</label>
               <input
                 type="file"
                 accept=".pdf,.jpg,.jpeg,.png"
                 onChange={(e) => setLampiran(e.target.files?.[0] || null)}
-                className="w-full border p-2 rounded-md"
+                className="w-full text-sm text-gray-500
+                  file:mr-4 file:py-2 file:px-4
+                  file:rounded-md file:border-0
+                  file:text-sm file:font-semibold
+                  file:bg-blue-50 file:text-blue-700
+                  hover:file:bg-blue-100"
               />
-              <p className="text-sm text-gray-500 mt-1">
-                Upload surat dokter / bukti izin (PDF/JPG)
+              <p className="text-xs text-gray-500 mt-1">
+                Upload bukti (jika ada). Misal: Surat Sakit, Surat Tugas Dinas, dll.
               </p>
             </div>
 
@@ -236,7 +261,7 @@ export default function PengajuanIzinPage() {
       {/* RIWAYAT */}
       <Card className="shadow-sm border border-gray-200">
         <CardHeader className="flex flex-col sm:flex-row justify-between items-center gap-2">
-          <CardTitle className="text-lg font-semibold text-gray-800">Riwayat Pengajuan</CardTitle>
+          <CardTitle className="text-lg font-semibold text-gray-800">Riwayat Pengajuan Izin</CardTitle>
           <input
             type="text"
             placeholder="Cari data..."
@@ -255,6 +280,8 @@ export default function PengajuanIzinPage() {
                   <tr>
                     <th className="p-2 border">Jenis Izin</th>
                     <th className="p-2 border">Tanggal</th>
+                    <th className="p-2 border">Durasi</th>
+                    <th className="p-2 border">Potong Gaji</th>
                     <th className="p-2 border">Lampiran</th>
                     <th className="p-2 border">Status</th>
                   </tr>
@@ -265,6 +292,12 @@ export default function PengajuanIzinPage() {
                       <td className="p-2 border">{r.jenis_izin}</td>
                       <td className="p-2 border">
                         {r.tanggal_mulai} – {r.tanggal_selesai}
+                      </td>
+                      <td className="p-2 border">
+                        {r.durasi_hari_kerja ?? '?'} Hari
+                      </td>
+                      <td className="p-2 border">
+                        {r.potong_gaji ? 'Ya' : 'Tidak'}
                       </td>
                       <td className="p-2 border">
                         {r.lampiran_url ? (

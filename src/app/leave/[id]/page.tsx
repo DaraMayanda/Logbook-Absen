@@ -95,7 +95,7 @@ export default function LeavePublicPage() {
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 py-10 print:bg-white">
       <div className="w-full max-w-2xl bg-white shadow-lg rounded-2xl p-8 border border-gray-200 print:shadow-none print:border-none">
         <h1 className="text-2xl font-bold text-center mb-6">
-          Detail Cuti Pegawai (Public View)
+          Detail Cuti Pegawai 
         </h1>
 
         {/* Informasi Pegawai */}

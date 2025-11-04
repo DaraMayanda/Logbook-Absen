@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { FileText, Loader2, ArrowLeft, Search } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
-// ======================= TYPES =======================
+// ======================= TYPES (DI-UPDATE) =======================
 type PermissionRequest = {
   id: number
   user_id: string
@@ -16,9 +16,11 @@ type PermissionRequest = {
   tanggal_selesai?: string
   alasan?: string
   lampiran_url?: string
-  status?: 'Menunggu' | 'Disetujui' | 'Ditolak'
+  status?: 'Menunggu' | 'Disetujui' | 'Ditolak' | 'Disetujui Level 1' // Tipe ini sudah OK
   created_at?: string
   profiles?: { full_name?: string; position?: string } | null
+  durasi_hari_kerja?: number // <-- BARU
+  potong_gaji?: boolean // <-- BARU
 }
 
 type PermissionApproval = {
@@ -39,10 +41,14 @@ export default function ApprovalIzinPage() {
   const [loadingId, setLoadingId] = useState<number | null>(null)
   const [loadingPage, setLoadingPage] = useState<boolean>(true)
   const [globalFilter, setGlobalFilter] = useState('')
+  
+  const [potongGajiChecks, setPotongGajiChecks] = useState<{[key: number]: boolean}>({})
 
+  // Helper
   const getApprovalRecord = (izinId: number, level: 1 | 2) =>
     approvals.find((a) => a.permission_request_id === izinId && a.level === level) || null
 
+  // Helper
   const formatDate = (dateStr?: string | null) => {
     if (!dateStr) return '-'
     try {
@@ -56,34 +62,42 @@ export default function ApprovalIzinPage() {
     }
   }
 
-  const hitungHariKerja = (startDate?: string, endDate?: string) => {
-    if (!startDate || !endDate) return 0
-    const start = new Date(startDate)
-    const end = new Date(endDate)
-    let count = 0
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const day = d.getDay()
-      if (day !== 0 && day !== 6) count++
-    }
-    return count
-  }
-
+  // FETCH IZIN
   const fetchIzinRequests = async () => {
     try {
       setLoadingPage(true)
       const { data, error } = await supabase
         .from('permission_requests')
         .select(`id,user_id,jenis_izin,tanggal_mulai,tanggal_selesai,alasan,lampiran_url,status,created_at,
-           profiles(full_name,position)`)
+                 durasi_hari_kerja, potong_gaji,
+                 profiles(full_name,position)`)
         .order('created_at', { ascending: false })
+        
       if (error) throw error
+      
       const safeData = Array.isArray(data)
         ? data.map((d: any) => ({
             ...d,
             profiles: Array.isArray(d.profiles) ? d.profiles[0] : d.profiles,
           }))
         : []
+        
       setIzinRequests(safeData as PermissionRequest[])
+
+      const initialChecks: {[key: number]: boolean} = {};
+      safeData.forEach(req => {
+        const autoPotong = [
+          'Lupa Absen Masuk', 
+          'Lupa Absen Pulang', 
+          'Meninggalkan Kantor', 
+          'Keperluan Mendesak (Pribadi)',
+          'Sakit (Tanpa Kuota Cuti)'
+        ].includes(req.jenis_izin);
+        
+        initialChecks[req.id] = req.potong_gaji || autoPotong;
+      });
+      setPotongGajiChecks(initialChecks);
+
     } catch (err) {
       console.error('Error fetching izin:', err)
       setIzinRequests([])
@@ -92,6 +106,7 @@ export default function ApprovalIzinPage() {
     }
   }
 
+  // Fetch approval
   const fetchApprovals = async () => {
     try {
       const { data, error } = await supabase
@@ -105,6 +120,7 @@ export default function ApprovalIzinPage() {
     }
   }
 
+  // Fetch role
   const fetchApproverRole = async () => {
     try {
       const { data: userData } = await supabase.auth.getUser()
@@ -116,6 +132,7 @@ export default function ApprovalIzinPage() {
     } catch {}
   }
 
+  // useEffect
   useEffect(() => {
     const init = async () => await Promise.all([fetchIzinRequests(), fetchApprovals(), fetchApproverRole()])
     init()
@@ -123,6 +140,9 @@ export default function ApprovalIzinPage() {
     const channel = supabase
       .channel('realtime-permission-approvals')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'permission_approvals' }, async () => {
+        await Promise.all([fetchIzinRequests(), fetchApprovals()])
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'permission_requests' }, async () => {
         await Promise.all([fetchIzinRequests(), fetchApprovals()])
       })
       .subscribe()
@@ -133,6 +153,7 @@ export default function ApprovalIzinPage() {
     }
   }, [])
 
+  // ACTION APPROVAL (Memanggil RPC yang sudah diperbaiki)
   const insertApproval = async (izin_id: number, status: 'Disetujui' | 'Ditolak') => {
     if (!approverRole) return alert('Role belum ditentukan.')
     setLoadingId(izin_id)
@@ -143,37 +164,33 @@ export default function ApprovalIzinPage() {
       const level = approverRole === 'kasubbag' ? 1 : 2
 
       if (level === 1) {
-        const existing = getApprovalRecord(izin_id, 1)
-        if (existing) {
-          await supabase
-            .from('permission_approvals')
-            .update({ status, approver_id, tanggal_persetujuan: new Date().toISOString() })
-            .eq('permission_request_id', izin_id)
-            .eq('level', 1)
-        } else {
-          await supabase.from('permission_approvals').insert([
-            {
-              permission_request_id: izin_id,
-              approver_id,
-              level: 1,
-              status,
-              tanggal_persetujuan: new Date().toISOString(),
-            },
-          ])
-        }
+        // Panggil RPC Level 1 (yang sudah tidak mengubah status 'Disetujui Level 1')
+        const { error } = await supabase.rpc('handle_permission_level_1_approval', {
+          p_permission_request_id: izin_id,
+          p_approver_uuid: approver_id,
+          p_status: status
+        });
+        if (error) throw error;
+
       } else if (level === 2) {
+        // Panggil RPC Level 2
         const level1Approval = getApprovalRecord(izin_id, 1)
         if (status === 'Disetujui' && level1Approval?.status !== 'Disetujui') {
           return alert('❌ Kepala Kantor hanya dapat menyetujui jika Kasubbag sudah menyetujui.')
         }
+        
+        const potong = potongGajiChecks[izin_id] || false;
+
         const { error } = await supabase.rpc('handle_permission_level_2_approval', {
           p_permission_request_id: izin_id,
           p_approver_uuid: approver_id,
           p_status: status,
+          p_potong_gaji: status === 'Disetujui' ? potong : false
         })
         if (error) throw error
       }
-      await Promise.all([fetchApprovals(), fetchIzinRequests()])
+      
+      await Promise.all([fetchApprovals(), fetchApprovals()])
     } catch (err: any) {
       console.error('Error in insertApproval:', err)
       alert(`❌ Gagal menyimpan persetujuan: ${err.message || 'Error tidak diketahui'}`)
@@ -182,18 +199,31 @@ export default function ApprovalIzinPage() {
     }
   }
 
+  // =================== FILTER PENDING (LOGIKA DIPERBAIKI) ===================
   const pendingRequests = useMemo(() => {
     if (!approverRole) return []
     return izinRequests.filter((r) => {
+      // Ambil status approval dari tabel approval
       const lvl1 = getApprovalRecord(r.id, 1)
       const lvl2 = getApprovalRecord(r.id, 2)
-      if (approverRole === 'kasubbag') return !lvl1 || lvl1.status === 'Menunggu'
-      if (approverRole === 'kepala_kantor')
-        return lvl1?.status === 'Disetujui' && (!lvl2 || lvl2.status === 'Menunggu')
+      
+      // Kasubbag: Tampilkan jika Lvl 1 BELUM bertindak
+      // DAN status utama BUKAN 'Ditolak' atau 'Disetujui' (sudah final)
+      if (approverRole === 'kasubbag') {
+        return r.status === 'Menunggu' && (!lvl1 || lvl1.status === 'Menunggu');
+      }
+      
+      // Kepala Kantor: Tampilkan jika Lvl 1 SUDAH setuju
+      // DAN Lvl 2 (dia sendiri) BELUM bertindak
+      if (approverRole === 'kepala_kantor') {
+        return lvl1?.status === 'Disetujui' && (!lvl2 || lvl2.status === 'Menunggu');
+      }
       return false
     })
   }, [izinRequests, approvals, approverRole])
+  // ======================================================================
 
+  // Filter Riwayat
   const riwayatRequests = useMemo(
     () => izinRequests.filter((r) => r.status === 'Disetujui' || r.status === 'Ditolak'),
     [izinRequests]
@@ -230,15 +260,16 @@ export default function ApprovalIzinPage() {
         </CardHeader>
         <CardContent>
           {pendingRequests.length === 0 ? (
-            <p className="text-gray-500 text-left">Tidak ada pengajuan menunggu persetujuan.</p>
+            <p className="text-gray-500 text-left pt-4">Tidak ada pengajuan menunggu persetujuan.</p>
           ) : (
-            <div className="w-full overflow-x-auto rounded-xl shadow-sm bg-white pb-3">
+            <div className="w-full overflow-x-auto rounded-xl shadow-sm bg-white pb-3 pt-3">
               <table className="min-w-[950px] sm:min-w-full table-auto border-collapse text-[16px] text-center mx-auto">
                 <thead className="bg-gray-100 text-center">
                   <tr>
-                    {['Nama','Jabatan','Jenis Izin','Periode','Durasi','Alasan','Lampiran','Aksi'].map((head) => (
+                    {['Nama','Jabatan','Jenis Izin','Periode','Durasi','Alasan','Lampiran'].map((head) => (
                       <th key={head} className="border px-3 py-2 text-center">{head}</th>
                     ))}
+                    <th className="border px-3 py-2 text-center">Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -251,7 +282,7 @@ export default function ApprovalIzinPage() {
                         {formatDate(req.tanggal_mulai)} - {formatDate(req.tanggal_selesai)}
                       </td>
                       <td className="border px-3 py-2 font-semibold">
-                        {hitungHariKerja(req.tanggal_mulai, req.tanggal_selesai)} Hari
+                        {req.durasi_hari_kerja ?? '?'} Hari
                       </td>
                       <td className="border px-3 py-2">{req.alasan || '-'}</td>
                       <td className="border px-3 py-2">
@@ -269,23 +300,41 @@ export default function ApprovalIzinPage() {
                         )}
                       </td>
                       <td className="border px-3 py-2">
-                        <div className="flex gap-2 justify-center">
-                          <Button
-                            size="sm"
-                            disabled={loadingId === req.id}
-                            onClick={() => insertApproval(req.id, 'Disetujui')}
-                            className="bg-green-600 hover:bg-green-700 text-white"
-                          >
-                            {loadingId === req.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Setujui'}
-                          </Button>
-                          <Button
-                            size="sm"
-                            disabled={loadingId === req.id}
-                            onClick={() => insertApproval(req.id, 'Ditolak')}
-                            className="bg-red-600 hover:bg-red-700 text-white"
-                          >
-                            {loadingId === req.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Tolak'}
-                          </Button>
+                        <div className="flex flex-col gap-2 items-center">
+                          {approverRole === 'kepala_kantor' && (
+                            <label className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4"
+                                checked={potongGajiChecks[req.id] || false}
+                                onChange={(e) => {
+                                  setPotongGajiChecks(prev => ({
+                                    ...prev,
+                                    [req.id]: e.target.checked
+                                  }));
+                                }}
+                              />
+                              Potong Gaji
+                            </label>
+                          )}
+                          <div className="flex gap-2 justify-center">
+                            <Button
+                              size="sm"
+                              disabled={loadingId === req.id}
+                              onClick={() => insertApproval(req.id, 'Disetujui')}
+                              className="bg-green-600 hover:bg-green-700 text-white"
+                            >
+                              {loadingId === req.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Setujui'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              disabled={loadingId === req.id}
+                              onClick={() => insertApproval(req.id, 'Ditolak')}
+                              className="bg-red-600 hover:bg-red-700 text-white"
+                            >
+                              {loadingId === req.id ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Tolak'}
+                            </Button>
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -319,13 +368,13 @@ export default function ApprovalIzinPage() {
 
         <CardContent>
           {riwayatRequests.length === 0 ? (
-            <p className="text-gray-500 text-center">Belum ada riwayat persetujuan.</p>
+            <p className="text-gray-500 text-center pt-4">Belum ada riwayat persetujuan.</p>
           ) : (
-            <div className="overflow-x-auto bg-white rounded-xl shadow-sm">
+            <div className="overflow-x-auto bg-white rounded-xl shadow-sm pt-3">
               <table className="min-w-[950px] sm:min-w-full table-auto border-collapse text-[15px] text-center mx-auto">
                 <thead className="bg-gray-100">
                   <tr>
-                    {['Nama','Jabatan','Jenis Izin','Periode','Durasi','Alasan','Lampiran','Status'].map((head) => (
+                    {['Nama','Jabatan','Jenis Izin','Periode','Durasi','Alasan','Lampiran','Status', 'Potong Gaji'].map((head) => (
                       <th key={head} className="border px-3 py-2 text-center">{head}</th>
                     ))}
                   </tr>
@@ -340,7 +389,7 @@ export default function ApprovalIzinPage() {
                         {formatDate(r.tanggal_mulai)} - {formatDate(r.tanggal_selesai)}
                       </td>
                       <td className="border px-3 py-2 font-semibold">
-                        {hitungHariKerja(r.tanggal_mulai, r.tanggal_selesai)} Hari
+                        {r.durasi_hari_kerja ?? '?'} Hari
                       </td>
                       <td className="border px-3 py-2">{r.alasan || '-'}</td>
                       <td className="border px-3 py-2">
@@ -367,6 +416,9 @@ export default function ApprovalIzinPage() {
                         }`}
                       >
                         {r.status}
+                      </td>
+                      <td className="border px-3 py-2 font-semibold">
+                        {r.potong_gaji ? <span className="text-red-600">Ya</span> : 'Tidak'}
                       </td>
                     </tr>
                   ))}
