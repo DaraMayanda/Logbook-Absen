@@ -5,6 +5,7 @@ import {
   LogOut,
   FileText,
   Briefcase,
+  ClipboardCheck,
   BarChart2,
   BookOpenCheck,
   AlertTriangle,
@@ -199,6 +200,12 @@ export default function DashboardAdmin() {
             href="/approvalcuti"
           />
           <FeatureCard
+            icon={ClipboardCheck}
+            title="Approval Izin"
+            description="Lihat dan approve pengajuan izin pegawai."
+            href="/approvalizin"
+          />
+          <FeatureCard
             icon={BarChart2}
             title="Rekap Absensi"
             description="Lihat laporan absensi bulanan pegawai."
@@ -216,7 +223,7 @@ export default function DashboardAdmin() {
         <div className="mt-8 p-4 rounded-xl shadow-sm border bg-yellow-50 border-yellow-300 text-yellow-800">
           <p className="font-semibold text-center flex items-center justify-center">
             <AlertTriangle size={20} className="mr-2 text-yellow-600" />
-            Pastikan selalu cek cuti, absensi, dan logbook setiap hari!
+            Pastikan selalu cek cuti, izin, absensi, dan logbook setiap hari!
           </p>
         </div>
       </main>

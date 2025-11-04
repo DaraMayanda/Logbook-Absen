@@ -196,7 +196,8 @@ export default function DashboardPage() {
         <h2 className="text-lg font-bold text-gray-800 mb-4">Menu Aplikasi</h2>
         <div className="space-y-4">
           <FeatureCard icon={FileText} title="Logbook" description="Catat detail aktivitas harian Anda." href="/logbook" />
-          <FeatureCard icon={Briefcase} title="Pengajuan Cuti" description="Ajukan permohonan cuti atau izin." href="/pengajuancutipage" />
+          <FeatureCard icon={Briefcase} title="Pengajuan Cuti" description="Ajukan permohonan cuti." href="/pengajuancutipage" />
+          <FeatureCard icon={AlertTriangle} title="Pengajuan Izin" description="Ajukan izin tidak hadir atau keperluan mendadak." href="/pengajuanizin" />
           <FeatureCard icon={BarChart2} title="Rekap Absensi" description="Lihat riwayat kehadiran bulanan." href="/rekapabsensi" />
         </div>
       </main>

@@ -2,12 +2,19 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { supabase } from '@/lib/supabaseClient'
+import { createClient } from '@supabase/supabase-js'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Loader2 } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 
+// ================= SUPABASE CLIENT =================
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+// ================= TYPES =================
 type LeaveRequest = {
   id: number
   leave_type: string
@@ -22,7 +29,8 @@ type LeaveRequest = {
   } | null
 }
 
-export default function LeaveDetailPage() {
+// ================= COMPONENT =================
+export default function LeavePublicPage() {
   const { id } = useParams()
   const [leave, setLeave] = useState<LeaveRequest | null>(null)
   const [loading, setLoading] = useState<boolean>(true)
@@ -48,6 +56,7 @@ export default function LeaveDetailPage() {
         .from('leave_requests')
         .select('*, profiles(full_name, position)')
         .eq('id', leaveId)
+        .eq('status', 'Disetujui') // hanya publik cuti yang disetujui
         .single()
 
       if (error || !leaveData) throw error || new Error('Data tidak ditemukan')
@@ -64,9 +73,7 @@ export default function LeaveDetailPage() {
     fetchLeaveDetail()
   }, [id])
 
-  const handlePrint = () => {
-    window.print()
-  }
+  const handlePrint = () => window.print()
 
   if (loading)
     return (
@@ -80,15 +87,15 @@ export default function LeaveDetailPage() {
       <p className="p-6 text-red-600 text-center">Data cuti tidak ditemukan.</p>
     )
 
+  // QR value publik
   const domain = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin
-  const qrValue =
-    leave.status === 'Disetujui' ? `${domain}/leave/${leave.id}` : null
+  const qrValue = `${domain}/leave/public/${leave.id}`
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 py-10 print:bg-white">
       <div className="w-full max-w-2xl bg-white shadow-lg rounded-2xl p-8 border border-gray-200 print:shadow-none print:border-none">
         <h1 className="text-2xl font-bold text-center mb-6">
-          Detail Cuti Pegawai
+          Detail Cuti Pegawai (Public View)
         </h1>
 
         {/* Informasi Pegawai */}
@@ -98,12 +105,10 @@ export default function LeaveDetailPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             <p>
-              <span className="font-semibold">Nama:</span>{' '}
-              {leave.profiles?.full_name || '-'}
+              <span className="font-semibold">Nama:</span> {leave.profiles?.full_name || '-'}
             </p>
             <p>
-              <span className="font-semibold">Posisi:</span>{' '}
-              {leave.profiles?.position || '-'}
+              <span className="font-semibold">Posisi:</span> {leave.profiles?.position || '-'}
             </p>
           </CardContent>
         </Card>
@@ -115,20 +120,16 @@ export default function LeaveDetailPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             <p>
-              <span className="font-semibold">Tipe Cuti:</span>{' '}
-              {leave.leave_type}
+              <span className="font-semibold">Tipe Cuti:</span> {leave.leave_type}
             </p>
             <p>
-              <span className="font-semibold">Tanggal Mulai:</span>{' '}
-              {formatDate(leave.start_date)}
+              <span className="font-semibold">Tanggal Mulai:</span> {formatDate(leave.start_date)}
             </p>
             <p>
-              <span className="font-semibold">Tanggal Selesai:</span>{' '}
-              {formatDate(leave.end_date)}
+              <span className="font-semibold">Tanggal Selesai:</span> {formatDate(leave.end_date)}
             </p>
             <p>
-              <span className="font-semibold">Alasan:</span>{' '}
-              {leave.reason || '-'}
+              <span className="font-semibold">Alasan:</span> {leave.reason || '-'}
             </p>
             <p>
               <span className="font-semibold">Status:</span>{' '}
@@ -145,23 +146,19 @@ export default function LeaveDetailPage() {
               </span>
             </p>
 
-            {qrValue && (
-              <div className="mt-6 flex flex-col items-center">
-                <QRCodeCanvas value={qrValue} size={140} />
-                <p className="text-sm text-gray-600 mt-2 text-center">
-                  Scan QR untuk membuka halaman ini
-                </p>
-              </div>
-            )}
+            {/* QR Code */}
+            <div className="mt-6 flex flex-col items-center">
+              <QRCodeCanvas value={qrValue} size={140} />
+              <p className="text-sm text-gray-600 mt-2 text-center">
+                Scan QR untuk membuka halaman ini (publik)
+              </p>
+            </div>
           </CardContent>
         </Card>
 
         {/* Tombol Cetak */}
         <div className="mt-8 flex justify-center print:hidden">
-          <Button
-            onClick={handlePrint}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6"
-          >
+          <Button onClick={handlePrint} className="bg-blue-600 hover:bg-blue-700 text-white px-6">
             Cetak Halaman
           </Button>
         </div>

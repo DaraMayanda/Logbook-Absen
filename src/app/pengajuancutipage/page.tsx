@@ -205,7 +205,7 @@ export default function PengajuanCutiPage() {
       <div className="flex items-center mb-6 space-x-2 text-blue-700 hover:text-blue-900 transition cursor-pointer"
            onClick={() => router.push('/dashboard')}>
         <ArrowLeft size={22} />
-        <h1 className="text-xl sm:text-2xl font-semibold">Pengajuan Cuti / Izin</h1>
+        <h1 className="text-xl sm:text-2xl font-semibold">Pengajuan Cuti </h1>
       </div>
 
       {/* FORM */}
