@@ -3,110 +3,155 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Loader2, ArrowLeft, FileSpreadsheet } from 'lucide-react'
+import { Loader2, ArrowLeft, FileSpreadsheet, Search, Filter } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
-import * as XLSX from 'xlsx'
+// GANTI IMPORT DARI 'xlsx' KE 'xlsx-js-style'
+import XLSX from 'xlsx-js-style' 
+import { 
+  format, 
+  getDaysInMonth, 
+  isSunday, 
+  isSaturday, 
+  eachDayOfInterval, 
+  startOfMonth, 
+  endOfMonth, 
+  parseISO,
+  isAfter,
+  startOfDay
+} from 'date-fns'
+import { id as idLocale } from 'date-fns/locale'
 
-type Attendance = {
-  id: number
-  user_id: string
-  attendance_date: string
-  shift: string
-  shift_start: string | null
-  shift_end: string | null
-  check_in: string | null
-  check_out: string | null
-  check_in_location: string | null
-  check_out_location: string | null
-  full_name?: string
-  position?: string
-  status?: 'Hadir' | 'Tidak Hadir'
-  terlambat?: 'Ya' | 'Tidak'
-}
-
+// --- Tipe Data ---
 type Profile = {
   id: string
   full_name: string
   position: string
 }
 
-const StatusBadge = ({ status }: { status?: string }) => {
-  const styles =
-    status === 'Hadir'
-      ? 'bg-green-50 text-green-600'
-      : 'bg-red-50 text-red-600'
-
-  return <div className={`px-3 py-1 text-sm font-medium rounded-md ${styles}`}>{status || '-'}</div>
+type LeaveInfo = {
+  type: string
+  half_day: boolean
 }
 
-const TerlambatBadge = ({ terlambat }: { terlambat?: string }) => {
-  const styles =
-    terlambat === 'Ya'
-      ? 'bg-yellow-50 text-yellow-800'
-      : 'bg-green-50 text-green-600'
-
-  return <div className={`px-3 py-1 text-sm font-medium rounded-md ${styles}`}>{terlambat || '-'}</div>
+type AttendanceInfo = {
+  shift: string
+  checkIn: string
 }
 
-export default function RekapAbsensiAdmin() {
+type MatrixRow = {
+  no: number
+  profile: Profile
+  days: {
+    date: string
+    code: 'H' | '2x' | 'T' | '2T¹' | '2T²' | 'I' | 'C' | 'S' | 'A' | '½' | '-' 
+    color: string
+    isHoliday: boolean
+  }[]
+  stats: {
+    H: number       
+    Sft: number     
+    T: number       
+    I: number
+    C: number
+    S: number
+    A: number
+    Half: number
+  }
+}
+
+export default function RekapAbsensiMatrix() {
   const router = useRouter()
-  const [attendances, setAttendances] = useState<Attendance[]>([])
-  const [filtered, setFiltered] = useState<Attendance[]>([])
-  const [loading, setLoading] = useState<boolean>(true)
+  const [loading, setLoading] = useState(true)
 
+  // State Filter
+  const [month, setMonth] = useState<number>(new Date().getMonth()) 
+  const [year, setYear] = useState<number>(new Date().getFullYear())
   const [searchName, setSearchName] = useState<string>('')
-  const [filterDate, setFilterDate] = useState<string>('')
-  const [filterMonth, setFilterMonth] = useState<string>('')
-  const [filterYear, setFilterYear] = useState<string>('')
 
-  // =====================================================
+  // Data Mentah
+  const [profiles, setProfiles] = useState<Profile[]>([])
+  const [attendanceMap, setAttendanceMap] = useState<Map<string, AttendanceInfo[]>>(new Map())
+  const [leaveMap, setLeaveMap] = useState<Map<string, LeaveInfo>>(new Map())
+  const [permissionSet, setPermissionSet] = useState<Set<string>>(new Set())
+
+  // =========================================================================
+  // 1. FETCH DATA
+  // =========================================================================
   const fetchData = async () => {
     setLoading(true)
     try {
-      const { data: attendanceData, error: attendanceError } = await supabase
-        .from('attendances')
-        .select('*')
-        .order('attendance_date', { ascending: false })
-      if (attendanceError) throw attendanceError
-      if (!attendanceData) throw new Error('Data absensi kosong')
+      const startDateStr = format(startOfMonth(new Date(year, month)), 'yyyy-MM-dd')
+      const endDateStr = format(endOfMonth(new Date(year, month)), 'yyyy-MM-dd')
 
-      const userIds = Array.from(new Set(attendanceData.map((a: any) => a.user_id)))
-      const { data: profileData, error: profileError } = await supabase
+      const { data: dataProfiles, error: errProf } = await supabase
         .from('profiles')
-        .select('*')
-        .in('id', userIds)
-      if (profileError) throw profileError
-      if (!profileData) throw new Error('Data profile kosong')
+        .select('id, full_name, position')
+        .neq('role', 'admin')      
+        .neq('is_admin', true)     
+        .order('full_name')
+      
+      if (errProf) throw errProf
 
-      const merged = attendanceData.map((att: any) => {
-        const profile = profileData.find((p: Profile) => p.id === att.user_id)
-        const status: 'Hadir' | 'Tidak Hadir' = att.check_in ? 'Hadir' : 'Tidak Hadir'
+      const { data: dataAtt } = await supabase
+        .from('attendances')
+        .select('user_id, attendance_date, shift, check_in') 
+        .gte('attendance_date', startDateStr)
+        .lte('attendance_date', endDateStr)
 
-        // Hitung Terlambat
-        let terlambat: 'Ya' | 'Tidak' = 'Tidak'
-        if (att.check_in) {
-          const checkInDate = new Date(att.check_in)
-          const checkInMinutes = checkInDate.getHours() * 60 + checkInDate.getMinutes()
-          if (att.shift.toLowerCase() === 'pagi' && checkInMinutes > 8 * 60) terlambat = 'Ya'
-          if (att.shift.toLowerCase() === 'malam' && checkInMinutes > 18 * 60) terlambat = 'Ya'
+      const { data: dataLeaves } = await supabase
+        .from('leave_requests')
+        .select('user_id, start_date, end_date, leave_type, status, half_day')
+        .eq('status', 'Disetujui')
+        .or(`start_date.lte.${endDateStr},end_date.gte.${startDateStr}`)
+
+      const { data: dataPermits } = await supabase
+        .from('permission_requests')
+        .select('user_id, tanggal_mulai, tanggal_selesai, status')
+        .in('status', ['Disetujui', 'Disetujui Level 1', 'Disetujui Level 2'])
+        .or(`tanggal_mulai.lte.${endDateStr},tanggal_selesai.gte.${startDateStr}`)
+
+      // PROCESS DATA
+      const tempAttMap = new Map<string, AttendanceInfo[]>()
+      dataAtt?.forEach(a => {
+        const key = `${a.user_id}_${a.attendance_date}`
+        const currentList = tempAttMap.get(key) || []
+        const exists = currentList.find(item => item.shift === a.shift)
+        if (!exists && a.check_in) {
+            currentList.push({ shift: a.shift, checkIn: a.check_in })
         }
-
-        return {
-          ...att,
-          full_name: profile?.full_name || '-',
-          position: profile?.position || '-',
-          status,
-          terlambat
-        }
+        tempAttMap.set(key, currentList)
       })
+      setAttendanceMap(tempAttMap)
 
-      setAttendances(merged)
-      setFiltered(merged)
-    } catch (err: any) {
-      console.error('❌ Gagal mengambil data absensi:', err.message || err)
-      toast.error('❌ Gagal mengambil data absensi. Cek console untuk detail.')
+      const tempLeaveMap = new Map<string, LeaveInfo>()
+      dataLeaves?.forEach(l => {
+        try {
+          const range = eachDayOfInterval({ start: parseISO(l.start_date), end: parseISO(l.end_date) })
+          range.forEach(date => {
+            const key = `${l.user_id}_${format(date, 'yyyy-MM-dd')}`
+            tempLeaveMap.set(key, { type: l.leave_type, half_day: l.half_day || false })
+          })
+        } catch (e) {}
+      })
+      setLeaveMap(tempLeaveMap)
+
+      const tempPermitSet = new Set<string>()
+      dataPermits?.forEach(p => {
+        try {
+          const range = eachDayOfInterval({ start: parseISO(p.tanggal_mulai), end: parseISO(p.tanggal_selesai) })
+          range.forEach(date => {
+             tempPermitSet.add(`${p.user_id}_${format(date, 'yyyy-MM-dd')}`)
+          })
+        } catch (e) {}
+      })
+      setPermissionSet(tempPermitSet)
+
+      if (dataProfiles) setProfiles(dataProfiles)
+
+    } catch (error: any) {
+      console.error("Error:", error)
+      toast.error("Gagal mengambil data: " + error.message)
     } finally {
       setLoading(false)
     }
@@ -114,197 +159,331 @@ export default function RekapAbsensiAdmin() {
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [month, year])
 
-  // =====================================================
-  useEffect(() => {
-    let temp = [...attendances]
-    if (searchName.trim()) temp = temp.filter(a => a.full_name?.toLowerCase().includes(searchName.toLowerCase()))
-    if (filterDate) temp = temp.filter(a => a.attendance_date === filterDate)
-    if (filterMonth) temp = temp.filter(a => a.attendance_date.startsWith(filterMonth))
-    if (filterYear) temp = temp.filter(a => a.attendance_date.startsWith(filterYear))
-    setFiltered(temp)
-  }, [searchName, filterDate, filterMonth, filterYear, attendances])
+  // =========================================================================
+  // 2. CORE LOGIC
+  // =========================================================================
+  const matrixData = useMemo(() => {
+    let filteredProfiles = profiles
+    if (searchName.trim()) {
+      filteredProfiles = profiles.filter(p => 
+        p.full_name?.toLowerCase().includes(searchName.toLowerCase())
+      )
+    }
+    if (!filteredProfiles.length) return []
 
-  // =====================================================
-  const formatDate = (dateStr: string) => dateStr ? new Date(dateStr).toLocaleDateString('id-ID') : '-'
-  const formatDateTime = (dateStr: string | null) => dateStr ? new Date(dateStr).toLocaleString('id-ID') : '-'
+    const daysCount = getDaysInMonth(new Date(year, month))
+    const daysArray = Array.from({ length: daysCount }, (_, i) => i + 1)
+    const today = startOfDay(new Date()) 
 
-  const statsPerEmployee = useMemo(() => {
-    const map: Record<string, { Hadir: number; TidakHadir: number }> = {}
-    attendances.forEach(a => {
-      const name = a.full_name || '-'
-      if (!map[name]) map[name] = { Hadir: 0, TidakHadir: 0 }
-      if (a.status === 'Hadir') map[name].Hadir++
-      else map[name].TidakHadir++
+    return filteredProfiles.map((profile, index) => {
+      const rowData: MatrixRow['days'] = []
+      let stats = { H: 0, Sft: 0, T: 0, I: 0, C: 0, S: 0, A: 0, Half: 0 }
+
+      daysArray.forEach(day => {
+        const dateObj = new Date(year, month, day)
+        const dateStr = format(dateObj, 'yyyy-MM-dd')
+        const key = `${profile.id}_${dateStr}`
+        const isWeekend = isSunday(dateObj) || isSaturday(dateObj)
+        
+        let code: MatrixRow['days'][0]['code'] = '-'
+        let color = 'bg-white'
+
+        if (attendanceMap.has(key)) {
+            const shifts = attendanceMap.get(key) || []
+            let lateCount = 0 
+            shifts.forEach(s => {
+                const checkInDate = new Date(s.checkIn)
+                const totalMinutes = checkInDate.getHours() * 60 + checkInDate.getMinutes()
+                if (s.shift.toLowerCase() === 'pagi' && totalMinutes > 8 * 60) lateCount++
+                if (s.shift.toLowerCase() === 'malam' && totalMinutes > 19 * 60) lateCount++
+            })
+
+            if (shifts.length > 1) {
+                if (lateCount === 1) { code = '2T¹'; color = 'bg-yellow-600 text-white font-bold' }
+                else if (lateCount >= 2) { code = '2T²'; color = 'bg-yellow-700 text-white font-bold' }
+                else { code = '2x'; color = 'bg-green-600 text-white font-bold' }
+            } else {
+                if (lateCount > 0) { code = 'T'; color = 'bg-yellow-500 text-white font-bold' }
+                else { code = 'H'; color = 'bg-green-200 text-green-800 border-green-300' }
+            }
+            stats.H += 1; stats.Sft += shifts.length; stats.T += lateCount;
+        }
+        else if (leaveMap.has(key)) {
+            const info = leaveMap.get(key)!
+            if (info.half_day) { code = '½'; color = 'bg-purple-200 text-purple-800'; stats.Half++ }
+            else if (info.type.toLowerCase().includes('sakit')) { code = 'S'; color = 'bg-orange-200 text-orange-800'; stats.S++ }
+            else { code = 'C'; color = 'bg-blue-200 text-blue-800'; stats.C++ }
+        }
+        else if (permissionSet.has(key)) { code = 'I'; color = 'bg-yellow-200 text-yellow-800'; stats.I++ }
+        else if (isWeekend) { code = '-'; color = 'bg-red-500 text-white' }
+        else if (isAfter(today, dateObj)) { code = 'A'; color = 'bg-red-50 text-red-600 font-bold'; stats.A++ }
+        else { code = '-'; color = 'bg-white' }
+
+        rowData.push({ date: dateStr, code, color, isHoliday: isWeekend })
+      })
+
+      return { no: index + 1, profile, days: rowData, stats }
     })
-    return map
-  }, [attendances])
+  }, [profiles, attendanceMap, leaveMap, permissionSet, month, year, searchName])
 
-  // =====================================================
+  // =========================================================================
+  // 3. EXPORT TO EXCEL WITH STYLING
+  // =========================================================================
   const exportToExcel = () => {
-  if (!filtered || filtered.length === 0) {
-    toast.error('Data kosong, tidak bisa di-export')
-    return
+    if (matrixData.length === 0) {
+      toast.error("Data kosong.")
+      return
+    }
+
+    const daysCount = getDaysInMonth(new Date(year, month))
+    const daysHeader = Array.from({ length: daysCount }, (_, i) => (i + 1).toString())
+
+    // 1. Definisikan Styles
+    const borderStyle = {
+      top: { style: "thin", color: { rgb: "000000" } },
+      bottom: { style: "thin", color: { rgb: "000000" } },
+      left: { style: "thin", color: { rgb: "000000" } },
+      right: { style: "thin", color: { rgb: "000000" } }
+    }
+
+    const headerStyle = {
+      fill: { fgColor: { rgb: "4B5563" } }, // Gray-700
+      font: { color: { rgb: "FFFFFF" }, bold: true },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: borderStyle
+    }
+
+    const styles: Record<string, any> = {
+      'H': { fill: { fgColor: { rgb: "C6EFCE" } }, font: { color: { rgb: "006100" }, bold: true } }, // Green
+      '2x': { fill: { fgColor: { rgb: "16A34A" } }, font: { color: { rgb: "FFFFFF" }, bold: true } }, // Dark Green
+      'T': { fill: { fgColor: { rgb: "EAB308" } }, font: { color: { rgb: "FFFFFF" }, bold: true } }, // Yellow
+      '2T¹': { fill: { fgColor: { rgb: "CA8A04" } }, font: { color: { rgb: "FFFFFF" }, bold: true } }, // Dark Yellow
+      '2T²': { fill: { fgColor: { rgb: "A16207" } }, font: { color: { rgb: "FFFFFF" }, bold: true } }, // Brown
+      'C': { fill: { fgColor: { rgb: "BFDBFE" } }, font: { color: { rgb: "1E3A8A" }, bold: true } }, // Blue
+      'S': { fill: { fgColor: { rgb: "FED7AA" } }, font: { color: { rgb: "9A3412" }, bold: true } }, // Orange
+      'I': { fill: { fgColor: { rgb: "FEF08A" } }, font: { color: { rgb: "854D0E" }, bold: true } }, // Light Yellow
+      '½': { fill: { fgColor: { rgb: "E9D5FF" } }, font: { color: { rgb: "6B21A8" }, bold: true } }, // Purple
+      'A': { fill: { fgColor: { rgb: "EF4444" } }, font: { color: { rgb: "FFFFFF" }, bold: true } }, // Red
+      'WEEKEND': { fill: { fgColor: { rgb: "EF4444" } } }, // Red Background for Holiday
+      'DEFAULT': { alignment: { horizontal: "center" } }
+    }
+
+    // 2. Siapkan Data Dasar
+    const headerRow = [
+      "No", "Nama Pegawai", "Jabatan", ...daysHeader, 
+      "Total Hari (H)", "Total Shift", "Telat", "Izin", "Cuti", "Sakit", "½ Hari", "Alpha"
+    ]
+    
+    // 3. Bangun Worksheet Manual dengan Style
+    // SheetJS Pro/Style structure: { v: value, s: style }
+    const ws_data: any[][] = []
+
+    // A. Header Row
+    const ws_header = headerRow.map(h => ({ v: h, s: headerStyle }))
+    ws_data.push(ws_header)
+
+    // B. Body Rows
+    matrixData.forEach(row => {
+      const rowCells: any[] = []
+      
+      // Kolom Data Pegawai
+      const baseStyle = { border: borderStyle, alignment: { vertical: "center" } }
+      rowCells.push({ v: row.no, s: { ...baseStyle, alignment: { horizontal: "center" } } })
+      rowCells.push({ v: row.profile.full_name, s: baseStyle })
+      rowCells.push({ v: row.profile.position, s: baseStyle })
+
+      // Kolom Tanggal (Matrix)
+      row.days.forEach(day => {
+        let cellStyle = { ...baseStyle, alignment: { horizontal: "center" } }
+        let val = day.code === '-' ? '' : day.code
+
+        if (day.isHoliday) {
+             // Jika Weekend, warnai merah meskipun kosong
+             cellStyle = { ...cellStyle, ...styles['WEEKEND'] }
+             if (val === '') val = '' // Tetap kosong tapi merah
+        } else if (styles[val]) {
+             // Jika ada kode (H, T, dll), ambil style nya
+             cellStyle = { ...cellStyle, ...styles[val] }
+        }
+
+        rowCells.push({ v: val, s: cellStyle })
+      })
+
+      // Kolom Statistik
+      const statStyle = { border: borderStyle, alignment: { horizontal: "center" }, font: { bold: true } }
+      
+      // H (Green)
+      rowCells.push({ v: row.stats.H, s: { ...statStyle, fill: { fgColor: { rgb: "DCFCE7" } } } })
+      // Sft (Green Darker)
+      rowCells.push({ v: row.stats.Sft, s: { ...statStyle, fill: { fgColor: { rgb: "BBF7D0" } } } })
+      // T (Yellow)
+      rowCells.push({ v: row.stats.T, s: { ...statStyle, fill: { fgColor: { rgb: "FEF9C3" } } } })
+      // I (Yellow Light)
+      rowCells.push({ v: row.stats.I, s: { ...statStyle, fill: { fgColor: { rgb: "FEF08A" } } } })
+      // C (Blue)
+      rowCells.push({ v: row.stats.C, s: { ...statStyle, fill: { fgColor: { rgb: "DBEAFE" } } } })
+      // S (Orange)
+      rowCells.push({ v: row.stats.S, s: { ...statStyle, fill: { fgColor: { rgb: "FFEDD5" } } } })
+      // Half (Purple)
+      rowCells.push({ v: row.stats.Half, s: { ...statStyle, fill: { fgColor: { rgb: "F3E8FF" } } } })
+      // A (Red)
+      rowCells.push({ v: row.stats.A, s: { ...statStyle, fill: { fgColor: { rgb: "FEE2E2" } }, font: { color: { rgb: "DC2626" }, bold: true } } })
+
+      ws_data.push(rowCells)
+    })
+
+    // 4. Create Workbook & Sheet
+    const ws = XLSX.utils.aoa_to_sheet([]) // Init empty
+    // Inject data with styles manual
+    // SheetJS style utils agak tricky, jadi kita pakai aoa_to_sheet biasa lalu timpa cellnya atau bangun dari nol seperti di atas.
+    // Cara di atas (ws_data array of objects) didukung oleh xlsx-js-style.
+    
+    // Load data with styles
+    XLSX.utils.sheet_add_aoa(ws, ws_data, { origin: "A1" })
+
+    // 5. Atur Lebar Kolom
+    const wscols = [{ wch: 5 }, { wch: 30 }, { wch: 20 }]
+    for(let i=0; i<daysCount; i++) wscols.push({ wch: 4 }) // Kolom tanggal kecil
+    for(let i=0; i<8; i++) wscols.push({ wch: 8 }) // Statistik
+
+    ws['!cols'] = wscols
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Rekap Absensi")
+    
+    const fileName = `Rekap_Absensi_${format(new Date(year, month), 'MMMM_yyyy', {locale: idLocale})}.xlsx`
+    XLSX.writeFile(wb, fileName)
+    
+    toast.success("Excel berhasil didownload!")
   }
 
-  const data = filtered.map((att, i) => ({
-    No: i + 1,
-    Nama: att.full_name || '-',
-    Posisi: att.position || '-',
-    Tanggal: formatDate(att.attendance_date),
-    Shift: att.shift,
-    'Check In': formatDateTime(att.check_in),
-    'Check Out': formatDateTime(att.check_out),
-    Status: att.status,
-    Terlambat: att.terlambat,
-    'Lokasi Masuk': att.check_in_location || '-',
-    'Lokasi Keluar': att.check_out_location || '-',
-  }))
+  // =========================================================================
+  // 4. RENDER UI
+  // =========================================================================
+  const daysInCurrentMonth = getDaysInMonth(new Date(year, month))
+  const dateHeaders = Array.from({ length: daysInCurrentMonth }, (_, i) => i + 1)
+  const monthName = format(new Date(year, month), 'MMMM yyyy', { locale: idLocale })
 
-  const ws = XLSX.utils.json_to_sheet(data)
-
-  // Auto-width kolom
-  const colWidths = Object.keys(data[0]).map(key => ({
-    wch: Math.max(
-      key.length + 2,
-      ...data.map(row => String((row as any)[key] ?? '').length + 2) // <-- pakai 'as any'
-    )
-  }))
-  ws['!cols'] = colWidths
-
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Rekap Absensi')
-  XLSX.writeFile(wb, `Rekap_Absensi_${new Date().toISOString().slice(0,10)}.xlsx`)
-}
-
-
-  // =====================================================
   return (
-    <div className="min-h-screen bg-gray-50 p-6 font-sans">
-  <Toaster position="top-center" />
-
-  {/* Tombol Header */}
-  <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-3">
-    {/* Tombol Kembali */}
-    <Button
-      onClick={() => router.push('/dashboardadmin')}
-      className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md w-full sm:w-auto justify-center shadow-sm"
-    >
-      <ArrowLeft className="w-4 h-4" /> Kembali ke Dashboard
-    </Button>
-
-    {/* Tombol Export */}
-    <Button
-      onClick={exportToExcel}
-      className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md w-full sm:w-auto justify-center shadow-sm"
-    >
-      <FileSpreadsheet className="w-4 h-4" /> Export Excel
-    </Button>
-  </div>
-
-
-      {/* Filter */}
-      <div className="flex flex-wrap gap-4 mb-4">
-        <input
-          type="text"
-          placeholder="Cari nama pegawai..."
-          value={searchName}
-          onChange={e => setSearchName(e.target.value)}
-          className="border border-gray-300 rounded px-3 py-2 w-64 focus:outline-none focus:ring-2 focus:ring-blue-400"
-        />
-        <input
-          type="date"
-          value={filterDate}
-          onChange={e => setFilterDate(e.target.value)}
-          className="border border-gray-300 rounded px-3 py-2 w-52 focus:outline-none focus:ring-2 focus:ring-blue-400"
-        />
-        <input
-          type="month"
-          value={filterMonth}
-          onChange={e => setFilterMonth(e.target.value)}
-          className="border border-gray-300 rounded px-3 py-2 w-52 focus:outline-none focus:ring-2 focus:ring-blue-400"
-        />
-        <input
-          type="number"
-          placeholder="Tahun"
-          value={filterYear}
-          onChange={e => setFilterYear(e.target.value)}
-          className="border border-gray-300 rounded px-3 py-2 w-32 focus:outline-none focus:ring-2 focus:ring-blue-400"
-        />
-        <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={fetchData}>
-          Refresh
-        </Button>
-      </div>
-
-      {/* Statistik */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-        {Object.entries(statsPerEmployee).map(([name, stats]) => (
-          <Card key={name} className="border shadow-sm">
-            <CardHeader className="bg-gray-100 text-gray-800">
-              <CardTitle>{name}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p>Hadir: {stats.Hadir}</p>
-              <p>Tidak Hadir: {stats.TidakHadir}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Table */}
-      <Card className="border shadow-sm">
-        <CardHeader className="bg-gray-100 text-gray-800">
-          <CardTitle>Data Absensi</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex justify-center p-6">
-              <Loader2 className="animate-spin h-6 w-6 text-blue-700" />
+    <div className="min-h-screen bg-gray-50 p-4 font-sans text-xs sm:text-sm">
+      <Toaster position="top-center" />
+      
+      {/* HEADER */}
+      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-4 space-y-4">
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <Button variant="outline" onClick={() => router.push('/dashboardadmin')} className="gap-2">
+              <ArrowLeft className="w-4 h-4"/> Kembali
+            </Button>
+            <div>
+              <h1 className="text-lg font-bold uppercase text-gray-800">Rekap Absensi Matrix</h1>
+              <p className="text-gray-500 text-xs">Periode: {monthName}</p>
             </div>
-          ) : filtered.length === 0 ? (
-            <p className="text-gray-500">Tidak ada data absensi.</p>
-          ) : (
-            <div className="w-full overflow-x-auto rounded-md">
-              <table className="min-w-[900px] sm:min-w-full table-auto border-collapse border border-gray-300 text-sm">
+          </div>
+          <Button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700 text-white w-full md:w-auto gap-2 shadow-sm">
+            <FileSpreadsheet className="w-4 h-4"/> Download Excel
+          </Button>
+        </div>
+
+        {/* Filter */}
+        <div className="flex flex-wrap gap-3 items-center bg-gray-50 p-3 rounded-md border border-gray-100">
+            <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+                <input type="text" placeholder="Cari Pegawai..." value={searchName} onChange={(e) => setSearchName(e.target.value)}
+                    className="pl-9 pr-3 py-2 border rounded-md text-sm w-full md:w-64 focus:outline-none focus:ring-1 focus:ring-blue-500"/>
+            </div>
+            <div className="flex gap-2">
+                <select value={month} onChange={(e) => setMonth(parseInt(e.target.value))} className="border p-2 rounded-md text-sm bg-white cursor-pointer">
+                    {Array.from({length: 12}, (_, i) => <option key={i} value={i}>{format(new Date(2023, i), 'MMMM', { locale: idLocale })}</option>)}
+                </select>
+                <select value={year} onChange={(e) => setYear(parseInt(e.target.value))} className="border p-2 rounded-md text-sm bg-white cursor-pointer">
+                    {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+            </div>
+            <Button size="sm" onClick={fetchData} variant="secondary" className="border gap-2">
+                <Filter className="w-3 h-3"/> Refresh
+            </Button>
+        </div>
+      </div>
+
+      {/* MATRIX TABLE */}
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-20 bg-white rounded-lg shadow-sm h-64">
+            <Loader2 className="animate-spin text-blue-600 w-8 h-8 mb-2"/>
+            <p className="text-gray-500">Memuat data absensi...</p>
+        </div>
+      ) : matrixData.length === 0 ? (
+        <div className="text-center py-20 bg-white rounded-lg shadow-sm text-gray-500">Tidak ada data pegawai.</div>
+      ) : (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-x-auto pb-2">
+            <table className="w-full border-collapse text-center text-[11px] md:text-xs min-w-[1200px]">
                 <thead>
-                  <tr className="bg-gray-100 text-gray-800">
-                    <th className="border px-4 py-2">Nama</th>
-                    <th className="border px-4 py-2">Posisi</th>
-                    <th className="border px-4 py-2">Tanggal</th>
-                    <th className="border px-4 py-2">Shift</th>
-                    <th className="border px-4 py-2">Check In</th>
-                    <th className="border px-4 py-2">Check Out</th>
-                    <th className="border px-4 py-2">Status</th>
-                    <th className="border px-4 py-2">Terlambat</th>
-                    <th className="border px-4 py-2">Lokasi Masuk</th>
-                    <th className="border px-4 py-2">Lokasi Keluar</th>
-                  </tr>
+                    <tr className="bg-gray-800 text-white font-semibold">
+                        <th rowSpan={2} className="border border-gray-600 p-2 min-w-[40px]">No</th>
+                        <th rowSpan={2} className="border border-gray-600 p-2 min-w-[200px] sticky left-0 bg-gray-800 z-20 text-left">Nama</th>
+                        <th rowSpan={2} className="border border-gray-600 p-2 min-w-[100px]">Jabatan</th>
+                        <th colSpan={daysInCurrentMonth} className="border border-gray-600 p-1 bg-gray-700">Tanggal</th>
+                        <th colSpan={8} className="border border-gray-600 p-1 bg-blue-900">Total</th>
+                    </tr>
+                    <tr className="bg-gray-100 text-gray-800 font-bold">
+                        {dateHeaders.map(d => {
+                             const dateCheck = new Date(year, month, d)
+                             const isLibur = isSunday(dateCheck) || isSaturday(dateCheck)
+                             return <th key={d} className={`border border-gray-300 w-8 h-8 ${isLibur ? 'bg-red-500 text-white' : ''}`}>{d}</th>
+                        })}
+                        <th className="border border-gray-300 w-10 bg-green-100 text-green-700" title="Total Hari Hadir (Max 30)">H</th>
+                        <th className="border border-gray-300 w-10 bg-green-200 text-green-800" title="Total Shift Hadir (Bisa >30)">Sft</th>
+                        <th className="border border-gray-300 w-9 bg-yellow-500 text-white" title="Total Terlambat">T</th>
+                        <th className="border border-gray-300 w-9 bg-yellow-100 text-yellow-700">I</th>
+                        <th className="border border-gray-300 w-9 bg-blue-100 text-blue-700">C</th>
+                        <th className="border border-gray-300 w-9 bg-orange-100 text-orange-700">S</th>
+                        <th className="border border-gray-300 w-9 bg-purple-100 text-purple-700">½</th>
+                        <th className="border border-gray-300 w-9 bg-red-100 text-red-700">A</th>
+                    </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(att => (
-                    <tr
-                      key={att.id}
-                      className={`hover:bg-gray-50 ${att.status === 'Hadir' ? 'bg-green-50' : 'bg-red-50'}`}
-                    >
-                      <td className="border px-4 py-2 max-w-xs break-words">{att.full_name}</td>
-                      <td className="border px-4 py-2 max-w-xs break-words">{att.position}</td>
-                      <td className="border px-4 py-2">{formatDate(att.attendance_date)}</td>
-                      <td className="border px-4 py-2">{att.shift}</td>
-                      <td className="border px-4 py-2">{formatDateTime(att.check_in)}</td>
-                      <td className="border px-4 py-2">{formatDateTime(att.check_out)}</td>
-                      <td className="border px-4 py-2"><StatusBadge status={att.status} /></td>
-                      <td className="border px-4 py-2"><TerlambatBadge terlambat={att.terlambat} /></td>
-                      <td className="border px-4 py-2 max-w-xs break-words">{att.check_in_location || '-'}</td>
-                      <td className="border px-4 py-2 max-w-xs break-words">{att.check_out_location || '-'}</td>
-                    </tr>
-                  ))}
+                    {matrixData.map((row) => (
+                        <tr key={row.profile.id} className="hover:bg-gray-50 group transition-colors">
+                            <td className="border border-gray-300 p-1">{row.no}</td>
+                            <td className="border border-gray-300 px-3 py-2 text-left font-medium sticky left-0 bg-white group-hover:bg-gray-50 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{row.profile.full_name}</td>
+                            <td className="border border-gray-300 p-1 text-gray-500">{row.profile.position}</td>
+                            
+                            {row.days.map((day, dIdx) => (
+                                <td key={dIdx} className={`border border-gray-300 h-8 font-bold text-[10px] ${day.color}`}>
+                                    {day.code !== '-' ? day.code : ''}
+                                </td>
+                            ))}
+
+                            <td className="border border-gray-300 font-bold bg-green-50">{row.stats.H}</td>
+                            <td className="border border-gray-300 font-bold bg-green-100">{row.stats.Sft}</td>
+                            <td className="border border-gray-300 font-bold bg-yellow-100 text-yellow-700">{row.stats.T}</td>
+                            <td className="border border-gray-300 font-bold bg-yellow-50">{row.stats.I}</td>
+                            <td className="border border-gray-300 font-bold bg-blue-50">{row.stats.C}</td>
+                            <td className="border border-gray-300 font-bold bg-orange-50">{row.stats.S}</td>
+                            <td className="border border-gray-300 font-bold bg-purple-50">{row.stats.Half}</td>
+                            <td className="border border-gray-300 font-bold bg-red-50 text-red-600">{row.stats.A}</td>
+                        </tr>
+                    ))}
                 </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            </table>
+        </div>
+      )}
+
+      {/* FOOTER */}
+      <div className="mt-4 flex flex-wrap gap-4 text-xs bg-white p-3 rounded border border-gray-200 shadow-sm">
+        <span className="font-bold text-gray-700">Keterangan:</span>
+        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-green-200 border border-green-300 inline-block"></span> 1 Shift (H)</div>
+        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-green-600 border border-green-700 inline-block"></span> 2 Shift (2x)</div>
+        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-yellow-600 border border-yellow-700 inline-block"></span> 2 Shift (1 Telat) (2T¹)</div>
+        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-yellow-700 border border-yellow-800 inline-block"></span> 2 Shift (2 Telat) (2T²)</div>
+        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-yellow-500 border border-yellow-600 inline-block"></span> 1 Shift Telat (T)</div>
+        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-blue-200 border border-blue-300 inline-block"></span> Cuti (C)</div>
+        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-purple-200 border border-purple-300 inline-block"></span> ½ Hari</div>
+        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-orange-200 border border-orange-300 inline-block"></span> Sakit (S)</div>
+        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-red-600 border border-red-700 inline-block text-white text-center leading-4 font-bold">A</span> Alpha</div>
+      </div>
     </div>
   )
 }

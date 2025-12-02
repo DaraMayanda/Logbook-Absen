@@ -5,7 +5,8 @@ import { supabase } from '@/lib/supabaseClient'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { QRCodeCanvas } from 'qrcode.react'
-import * as XLSX from 'xlsx'
+// UBAH IMPORT INI AGAR FITUR STYLE (WARNA/BORDER) BERFUNGSI
+import XLSX from 'xlsx-js-style' 
 import { Loader2, ArrowLeft, Search } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import {
@@ -273,7 +274,11 @@ export default function ApprovalCutiPage() {
     const title = [`REKAPITULASI PERSETUJUAN CUTI PEGAWAI`];
     const subTitle = [`BULAN: ${monthName} ${yearName}`];
     const emptyRow: (string | number)[] = [];
+    
+    // Ganti utils.aoa_to_sheet biasa dengan inisialisasi sheet
     const worksheet = XLSX.utils.aoa_to_sheet([title, subTitle, emptyRow]);
+    
+    // Tambahkan JSON data mulai baris ke-4
     XLSX.utils.sheet_add_json(worksheet, dataToExport, { origin: 'A4' });
 
     const allBorders = {
@@ -323,12 +328,14 @@ export default function ApprovalCutiPage() {
       { s: { r: 1, c: 0 }, e: { r: 1, c: numCols - 1 } }
     ];
 
-    if (!worksheet['A1']) worksheet['A1'] = {};
+    // APPLY STYLES MANUAL
+    if (!worksheet['A1']) worksheet['A1'] = { v: title[0] };
     worksheet['A1'].s = titleStyle;
     
-    if (!worksheet['A2']) worksheet['A2'] = {};
+    if (!worksheet['A2']) worksheet['A2'] = { v: subTitle[0] };
     worksheet['A2'].s = subTitleStyle;
 
+    // Header Style (Baris 3, index 3 -> A4 di Excel)
     for (let C = 0; C < numCols; ++C) {
       const headerCellAddress = XLSX.utils.encode_cell({ r: 3, c: C });
       if (worksheet[headerCellAddress]) {
@@ -336,6 +343,7 @@ export default function ApprovalCutiPage() {
       }
     }
     
+    // Body Style
     for (let R = 4; R <= range.e.r; ++R) {
       for (let C = 0; C < numCols; ++C) {
         const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
@@ -343,6 +351,7 @@ export default function ApprovalCutiPage() {
           if (!worksheet[cellAddress].s) worksheet[cellAddress].s = cellStyle;
           else worksheet[cellAddress].s = { ...cellStyle, ...worksheet[cellAddress].s };
         } else {
+          // Isi cell kosong dengan style border
           XLSX.utils.sheet_add_aoa(worksheet, [[""]], { origin: cellAddress });
           worksheet[cellAddress].s = cellStyle;
         }
@@ -511,7 +520,7 @@ export default function ApprovalCutiPage() {
             <p className="text-gray-500">Tidak ada pengajuan menunggu persetujuan.</p>
           ) : (
             <div className="w-full overflow-x-auto rounded-xl shadow-sm bg-white pb-3">
-            <table className="min-w-[900px] sm:min-w-full table-auto border-collapse text-[16px]">
+              <table className="min-w-[900px] sm:min-w-full table-auto border-collapse text-[16px]">
                 <thead className="bg-gray-100">
                   <tr>
                     <th className="border px-3 py-2 text-center">Nama</th>
@@ -616,7 +625,7 @@ export default function ApprovalCutiPage() {
         </CardHeader>
         <CardContent>
           <div className="w-full overflow-x-auto rounded-xl shadow-sm bg-white pb-3">
-          <table className="min-w-[900px] sm:min-w-full table-auto border-collapse text-[15px]">
+            <table className="min-w-[900px] sm:min-w-full table-auto border-collapse text-[15px]">
               <thead className="bg-gray-100">
                 {table.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id}>

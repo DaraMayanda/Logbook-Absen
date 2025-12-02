@@ -204,7 +204,6 @@ export default function PengajuanIzinPage() {
                 <option value="Meninggalkan Kantor">Meninggalkan Kantor (Keperluan Pribadi)</option>
                 <option value="Keperluan Mendesak (Pribadi)">Keperluan Mendesak (Pribadi)</option>
                 <option value="Sakit (Tanpa Kuota Cuti)">Sakit (Tanpa Kuota Cuti Tahunan)</option>
-                <option value="Perjalanan Dinas">Perjalanan Dinas</option>
               </select>
             </div>
 

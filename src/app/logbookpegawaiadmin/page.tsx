@@ -4,7 +4,8 @@ import React, { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { RefreshCw, Printer, ArrowLeft, FileSpreadsheet } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import * as XLSX from 'xlsx'
+// UBAH IMPORT INI: Gunakan xlsx-js-style agar fitur styling (alignment/border) berfungsi
+import XLSX from 'xlsx-js-style'
 
 interface Attendance {
   id: number
@@ -114,19 +115,45 @@ export default function LogbookPegawaiAdminPage() {
 
     const ws = XLSX.utils.json_to_sheet(exportData)
 
+    // Auto-width columns
     const colWidths = Object.keys(exportData[0]).map((key) => ({
       wch: Math.max(key.length + 2, ...exportData.map((row) => String(row[key] ?? '').length + 2))
     }))
     ws['!cols'] = colWidths
 
+    // Styling: Center alignment & Wrap Text
     const range = XLSX.utils.decode_range(ws['!ref']!)
     for (let R = range.s.r; R <= range.e.r; ++R) {
       for (let C = range.s.c; C <= range.e.c; ++C) {
         const cellAddress = XLSX.utils.encode_cell({ r: R, c: C })
         if (!ws[cellAddress]) continue
         if (!ws[cellAddress].s) ws[cellAddress].s = {}
-        ws[cellAddress].s = {
-          alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
+        
+        // Header Style (Bold, Gray Background)
+        if (R === 0) {
+            ws[cellAddress].s = {
+                font: { bold: true, color: { rgb: "FFFFFF" } },
+                fill: { fgColor: { rgb: "4F81BD" } },
+                alignment: { vertical: 'center', horizontal: 'center' },
+                border: {
+                    top: { style: "thin", color: { rgb: "000000" } },
+                    bottom: { style: "thin", color: { rgb: "000000" } },
+                    left: { style: "thin", color: { rgb: "000000" } },
+                    right: { style: "thin", color: { rgb: "000000" } }
+                }
+            }
+        } 
+        // Body Style
+        else {
+            ws[cellAddress].s = {
+                alignment: { vertical: 'center', horizontal: 'left', wrapText: true },
+                border: {
+                    top: { style: "thin", color: { rgb: "000000" } },
+                    bottom: { style: "thin", color: { rgb: "000000" } },
+                    left: { style: "thin", color: { rgb: "000000" } },
+                    right: { style: "thin", color: { rgb: "000000" } }
+                }
+            }
         }
       }
     }
@@ -146,25 +173,24 @@ export default function LogbookPegawaiAdminPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
-  {/* Tombol Header */}
-  <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-3">
-    {/* Tombol Kembali */}
-    <button
-      onClick={() => router.push('/dashboardadmin')}
-      className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md w-full sm:w-auto justify-center shadow-sm"
-    >
-      <ArrowLeft className="w-4 h-4" /> Kembali ke Dashboard
-    </button>
+      {/* Tombol Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-3">
+        {/* Tombol Kembali */}
+        <button
+          onClick={() => router.push('/dashboardadmin')}
+          className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md w-full sm:w-auto justify-center shadow-sm"
+        >
+          <ArrowLeft className="w-4 h-4" /> Kembali ke Dashboard
+        </button>
 
-    {/* Tombol Export */}
-    <button
-      onClick={exportToExcel}
-      className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md w-full sm:w-auto justify-center shadow-sm"
-    >
-      <FileSpreadsheet className="w-4 h-4" /> Export Excel
-    </button>
-  </div>
-
+        {/* Tombol Export */}
+        <button
+          onClick={exportToExcel}
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md w-full sm:w-auto justify-center shadow-sm"
+        >
+          <FileSpreadsheet className="w-4 h-4" /> Export Excel
+        </button>
+      </div>
 
       <h1 className="text-2xl font-bold mb-4 text-gray-800">Logbook Pegawai</h1>
 
