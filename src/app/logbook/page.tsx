@@ -15,29 +15,30 @@ interface UserData {
 
 export default function LogbookPage() {
   const router = useRouter()
-  // Kita hapus ketergantungan ketat pada 'today' untuk query utama
-  const todayDateDisplay = useMemo(() => new Date().toLocaleDateString('id-ID', {weekday: 'long', day:'numeric', month:'long'}), [])
   
   const [userId, setUserId] = useState<string | null>(null)
   const [userData, setUserData] = useState<UserData>({ fullName: '', position: '' })
   
+  // Data Absensi yang sedang aktif
   const [attendanceId, setAttendanceId] = useState<number | null>(null)
-  const [shiftName, setShiftName] = useState('')
-  const [attendanceDate, setAttendanceDate] = useState('')
+  const [shiftName, setShiftName] = useState<string>('')
+  const [attendanceDate, setAttendanceDate] = useState<string>('')
 
+  // Data Logbook
   const [logbookId, setLogbookId] = useState<number | null>(null)
   const [tasks, setTasks] = useState<string[]>([])
   const [selectedTask, setSelectedTask] = useState('')
   const [otherTask, setOtherTask] = useState('')
   const [standardTasks, setStandardTasks] = useState<string[]>([])
-  const [description, setDescription] = useState('')
+  const [formData, setFormData] = useState({ description: '' })
   
+  // State UI
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
-  const [statusLogbook, setStatusLogbook] = useState('') // status saat ini
+  const [statusLogbook, setStatusLogbook] = useState('')
 
-  // --- Daftar Tugas ---
+  // --- Daftar Tugas Sesuai Jabatan ---
   const tugasPPNPN = [
     "Pengarsipan dokumen dan surat",
     "Input data ke aplikasi SAKTI / Excel",
@@ -77,7 +78,7 @@ export default function LogbookPage() {
     "Lainnya"
   ]
 
-  // --- Fetch Data ---
+  // --- FETCH DATA UTAMA ---
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true)
@@ -86,7 +87,7 @@ export default function LogbookPage() {
         if (userErr || !user) throw new Error('Sesi login tidak ditemukan.')
         setUserId(user.id)
 
-        // 1. Ambil Profile
+        // 1. AMBIL PROFILE & SET TUGAS
         const { data: profile } = await supabase
           .from('profiles')
           .select('full_name, position')
@@ -96,49 +97,56 @@ export default function LogbookPage() {
         const position = profile?.position || ''
         setUserData({ fullName: profile?.full_name || user.email!, position })
 
-        // Set list tugas
         if (position.toLowerCase().includes('satpam')) setStandardTasks(tugasSatpam)
         else if (position.toLowerCase().includes('supir')) setStandardTasks(tugasSupir)
         else if (position.toLowerCase().includes('cs')) setStandardTasks(tugasCS)
         else if (position) setStandardTasks(tugasPPNPN)
         else setStandardTasks([])
 
-        // 2. Cari Absen AKTIF (Yang belum di-checkout)
-        // Logika ini disamakan dengan halaman Checkout agar sinkron
-        const { data: activeSessions, error: attError } = await supabase
+        // 2. CARI ATTENDANCE YANG BELUM CHECKOUT (Logic Diperbaiki)
+        // Kita cari data absen user ini yang kolom 'check_out' nya masih NULL
+        const { data: activeSession, error: attError } = await supabase
           .from('attendances')
           .select('id, shift, attendance_date')
           .eq('user_id', user.id)
-          .is('check_out', null) // Cari yang belum pulang
+          .is('check_out', null) // FILTER PENTING: Hanya yang belum pulang
           .order('check_in', { ascending: false }) // Ambil yang paling baru
           .limit(1)
+          .maybeSingle()
 
         if (attError) throw attError
 
-        if (!activeSessions || activeSessions.length === 0) {
+        // Jika tidak ada sesi aktif, user harus absen masuk dulu
+        if (!activeSession) {
           setError('Anda belum melakukan Absen Masuk (atau sudah Checkout). Silakan absen masuk dulu.')
           setIsLoading(false)
           return
         }
 
-        const activeShift = activeSessions[0]
-        setAttendanceId(activeShift.id)
-        setShiftName(activeShift.shift)
-        setAttendanceDate(activeShift.attendance_date) // Tanggal sesuai absen masuk (bisa kemarin)
+        // Set data absen aktif
+        setAttendanceId(activeSession.id)
+        setShiftName(activeSession.shift)
+        
+        // Format tanggal agar enak dibaca (ambil dari tanggal absen aslinya)
+        const formattedDate = new Date(activeSession.attendance_date).toLocaleDateString('id-ID', {
+            weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+        })
+        setAttendanceDate(formattedDate)
 
-        // 3. Ambil Logbook untuk Attendance ID tersebut
+        // 3. AMBIL ATAU BUAT LOGBOOK BERDASARKAN ATTENDANCE ID
         const { data: logbook } = await supabase
           .from('logbooks')
           .select('id, status, description')
-          .eq('attendance_id', activeShift.id)
+          .eq('attendance_id', activeSession.id) // Link ke absen yg benar
           .maybeSingle()
 
         if (logbook) {
+          // Jika sudah ada logbook (lanjutkan pengisian)
           setLogbookId(logbook.id)
           setStatusLogbook(logbook.status)
-          setDescription(logbook.description || '')
+          setFormData({ description: logbook.description || '' })
           
-          // Ambil tasks yang sudah tersimpan (jika ada)
+          // Ambil tasks yang sudah tersimpan
           const { data: existingTasks } = await supabase
             .from('tasks')
             .select('task_name')
@@ -147,20 +155,15 @@ export default function LogbookPage() {
           if (existingTasks) {
             setTasks(existingTasks.map(t => t.task_name))
           }
-
-          if (logbook.status === 'COMPLETED') {
-             // Jika sudah selesai, kita load datanya tapi user tidak bisa edit (opsional, atau biarkan edit)
-             // Di sini kita biarkan edit jika perlu revisi sebelum checkout
-          }
         } else {
-          // Auto-create logbook baru jika belum ada row-nya
+          // Jika belum ada, buat logbook baru (Auto-create)
           const { data: newLogbook, error: insertErr } = await supabase
             .from('logbooks')
             .insert({
               user_id: user.id,
-              attendance_id: activeShift.id,
-              shift: activeShift.shift,
-              log_date: activeShift.attendance_date, // Pakai tanggal absen
+              attendance_id: activeSession.id,
+              shift: activeSession.shift,
+              log_date: activeSession.attendance_date, // Pakai tanggal absen
               status: 'IN_PROGRESS'
             })
             .select('id')
@@ -172,21 +175,21 @@ export default function LogbookPage() {
         }
 
       } catch (err: any) {
-        console.error(err)
-        setError(err.message)
+        console.error("Error Fetching:", err)
+        setError(err.message || 'Terjadi kesalahan memuat data.')
       } finally {
         setIsLoading(false)
       }
     }
 
     fetchData()
-  }, []) // Run once on mount
+  }, []) // Run sekali saat mount
 
-  // --- Handlers ---
+  // --- Logic Tambah Tugas ---
   const addTask = () => {
     let newTask = selectedTask
     if (selectedTask === 'Lainnya' && otherTask.trim() !== '') newTask = otherTask.trim()
-    if (!newTask || tasks.includes(newTask)) return
+    if (!newTask || tasks.includes(newTask)) return // Cegah duplikat/kosong
     setTasks(prev => [...prev, newTask])
     setSelectedTask('')
     setOtherTask('')
@@ -194,6 +197,7 @@ export default function LogbookPage() {
 
   const removeTask = (index: number) => setTasks(prev => prev.filter((_, i) => i !== index))
 
+  // --- Logic Submit Logbook ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!logbookId || tasks.length === 0) {
@@ -202,15 +206,15 @@ export default function LogbookPage() {
     }
     
     setIsSubmitting(true)
-    setError('') // Clear error
+    setError('') 
 
     try {
-      // 1. Update Logbook Header
+      // 1. Update Header Logbook
       const { error: updateErr } = await supabase
         .from('logbooks')
         .update({
-          description: description,
-          status: 'COMPLETED' // Set status COMPLETED agar bisa checkout
+          description: formData.description,
+          status: 'COMPLETED' // PENTING: Status ini memicu tombol Checkout aktif
         })
         .eq('id', logbookId)
 
@@ -224,12 +228,12 @@ export default function LogbookPage() {
       
       if (insertErr) throw insertErr
 
-      // Sukses
       setStatusLogbook('COMPLETED')
-      router.replace('/dashboard') // Kembali ke dashboard agar tombol checkout aktif
+      // Redirect ke dashboard agar user bisa langsung checkout
+      router.replace('/dashboard')
     } catch (err: any) {
       console.error('Supabase Error:', err)
-      setError('Gagal menyimpan logbook: ' + err.message)
+      setError('Gagal menyimpan logbook.')
     } finally {
       setIsSubmitting(false)
     }
@@ -237,8 +241,10 @@ export default function LogbookPage() {
 
   if (isLoading) return (
     <div className="flex h-screen items-center justify-center bg-gray-50">
-      <RefreshCw className="animate-spin text-blue-600 w-6 h-6" />
-      <span className="ml-3 text-gray-600 font-medium">Memuat data logbook...</span>
+      <div className="text-center">
+        <RefreshCw className="animate-spin text-blue-600 w-8 h-8 mx-auto mb-2" />
+        <span className="text-gray-600 font-medium">Memuat Logbook Shift Aktif...</span>
+      </div>
     </div>
   )
 
@@ -249,28 +255,50 @@ export default function LogbookPage() {
           <ChevronLeft size={20} className="mr-1" /> Kembali
         </button>
         <h1 className="text-2xl font-bold text-gray-800 flex items-center">
-          <FileText className="mr-2 text-blue-600" /> Logbook Harian
+          <FileText className="mr-2 text-blue-600" /> Logbook
         </h1>
       </header>
 
-      {/* ERROR ALERT */}
-      {error && (
-        <div className="mb-6 flex items-center bg-red-50 text-red-800 border border-red-200 rounded-lg p-4">
-          <AlertTriangle size={24} className="mr-3" />
-          <p className="font-medium">{error}</p>
+      {/* INFO ABSEN AKTIF */}
+      {!error && (
+        <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-blue-500 mb-6">
+            <p className="text-xs text-gray-500 font-bold uppercase tracking-wide">Logbook Untuk Sesi:</p>
+            <div className="flex justify-between items-end mt-1">
+                <div>
+                    <p className="text-lg font-bold text-gray-800">
+                        SHIFT {shiftName ? shiftName.toUpperCase() : '-'}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                        Tanggal Masuk: {attendanceDate}
+                    </p>
+                </div>
+                <div className={`px-3 py-1 rounded-full text-xs font-bold ${statusLogbook === 'COMPLETED' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                    {statusLogbook === 'COMPLETED' ? 'SUDAH SELESAI' : 'BELUM SELESAI'}
+                </div>
+            </div>
         </div>
       )}
 
-      {/* FORM AREA */}
+      {/* ERROR MESSAGE */}
+      {error && (
+        <div className="mb-6 flex flex-col items-center justify-center bg-red-50 text-red-800 border border-red-200 rounded-lg p-6 text-center">
+          <AlertTriangle size={32} className="mb-2 text-red-600" />
+          <p className="font-bold text-lg mb-1">Akses Ditolak</p>
+          <p className="text-sm">{error}</p>
+          <button onClick={() => router.push('/checkinpage')} className="mt-4 bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-700">
+            Pergi ke Absen Masuk
+          </button>
+        </div>
+      )}
+
+      {/* FORM LOGBOOK */}
       {!error && (
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-lg p-6 space-y-6">
           
-          {/* Header Info */}
+          {/* Header Info (ReadOnly) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4 border-b border-gray-100">
             <Input label="Nama Pegawai" value={userData.fullName} icon={User} readOnly />
             <Input label="Jabatan" value={userData.position} icon={Briefcase} readOnly />
-            <Input label="Tanggal Absen" value={attendanceDate || todayDateDisplay} icon={Calendar} readOnly />
-            <Input label="Shift Aktif" value={shiftName ? shiftName.toUpperCase() : '-'} readOnly />
           </div>
 
           {/* Task Input Section */}
@@ -286,7 +314,7 @@ export default function LogbookPage() {
                 <option value="">-- Pilih tugas rutin --</option>
                 {standardTasks.map((t, i) => <option key={i}>{t}</option>)}
               </select>
-              <button type="button" onClick={addTask} className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg transition shadow-md">
+              <button type="button" onClick={addTask} className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg transition shadow-md flex items-center justify-center min-w-[50px]">
                 <Plus size={20} />
               </button>
             </div>
@@ -296,27 +324,27 @@ export default function LogbookPage() {
                 value={otherTask}
                 onChange={(e) => setOtherTask(e.target.value)}
                 placeholder="Tulis tugas lainnya secara manual..."
-                className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-blue-100 outline-none"
+                className="w-full border border-gray-300 p-3 rounded-lg focus:ring-2 focus:ring-blue-100 outline-none animate-in fade-in"
               />
             )}
 
-            {/* Task List */}
+            {/* Task List Visualization */}
             {tasks.length > 0 ? (
               <div className="mt-4 space-y-2">
                 {tasks.map((task, i) => (
-                  <div key={i} className="flex justify-between items-center bg-blue-50 p-3 rounded-lg border border-blue-100 animate-in fade-in slide-in-from-top-1">
+                  <div key={i} className="flex justify-between items-center bg-blue-50 p-3 rounded-lg border border-blue-100 animate-in fade-in slide-in-from-top-2">
                     <span className="text-sm font-medium text-blue-900 flex items-center gap-2">
-                      <span className="w-2 h-2 bg-blue-400 rounded-full"></span> {task}
+                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div> {task}
                     </span>
-                    <button type="button" onClick={() => removeTask(i)} className="text-red-500 hover:text-red-700 transition p-1">
+                    <button type="button" onClick={() => removeTask(i)} className="text-red-400 hover:text-red-600 transition p-1">
                       <Trash2 size={18} />
                     </button>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="text-center py-6 border-2 border-dashed border-gray-200 rounded-lg text-gray-400 text-sm">
-                Belum ada tugas yang ditambahkan.
+              <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-lg text-gray-400 text-sm bg-gray-50">
+                Belum ada tugas yang ditambahkan.<br/>Silakan pilih tugas di atas.
               </div>
             )}
           </div>
@@ -325,11 +353,11 @@ export default function LogbookPage() {
           <div>
             <label className="text-sm font-bold text-gray-700 mb-2 block">Keterangan Tambahan / Kendala</label>
             <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              value={formData.description}
+              onChange={(e) => setFormData({ description: e.target.value })}
               rows={4}
               className="w-full border border-gray-300 rounded-lg p-3 resize-none focus:ring-2 focus:ring-blue-100 outline-none transition"
-              placeholder="Tulis detail pekerjaan atau kendala yang dihadapi..."
+              placeholder="Tulis detail pekerjaan atau kendala yang dihadapi (Opsional)..."
             />
           </div>
 
@@ -339,14 +367,14 @@ export default function LogbookPage() {
               type="submit"
               disabled={isSubmitting}
               className={`w-full flex justify-center items-center gap-2 text-white py-4 rounded-xl font-bold shadow-lg transition transform active:scale-95 ${
-                isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-900 hover:bg-blue-800'
+                isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-900 hover:bg-blue-800 shadow-blue-500/30'
               }`}
             >
               {isSubmitting ? <RefreshCw size={20} className="animate-spin" /> : <Send size={20} />}
-              {isSubmitting ? 'Menyimpan...' : statusLogbook === 'COMPLETED' ? 'Update Logbook' : 'Submit Logbook (Selesai)'}
+              {isSubmitting ? 'Menyimpan...' : statusLogbook === 'COMPLETED' ? 'Update & Simpan' : 'Submit Logbook (Selesai)'}
             </button>
             <p className="text-center text-xs text-gray-500 mt-3">
-              *Pastikan semua tugas sudah tercatat sebelum menekan tombol Submit.
+              *Setelah logbook selesai (COMPLETED), tombol Absen Pulang di dashboard akan aktif.
             </p>
           </div>
         </form>
