@@ -16,12 +16,17 @@ export default function CheckOutForm() {
   const [distance, setDistance] = useState<number | null>(null);
   const [address, setAddress] = useState('Mencari alamat...');
   const [locationStatus, setLocationStatus] = useState('Mencari lokasi...');
+  
+  // State Data Absen
   const [attendanceId, setAttendanceId] = useState<number | null>(null);
   const [logbookStatus, setLogbookStatus] = useState<string | null>(null);
   const [currentShift, setCurrentShift] = useState<'pagi' | 'malam' | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  
+  // State UI
   const [canCheckOut, setCanCheckOut] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadingData, setLoadingData] = useState(true);
 
   // --- Realtime clock ---
   useEffect(() => {
@@ -82,56 +87,75 @@ export default function CheckOutForm() {
     fetchUser();
   }, []);
 
-  // --- Ambil attendance shift aktif & logbook ---
+  // --- LOGIC UTAMA: FETCH SHIFT AKTIF (DIPERBAIKI) ---
   const fetchActiveShift = async () => {
     if (!userId) return;
+    setLoadingData(true);
     try {
-      const now = new Date();
-      const todayStr = now.toISOString().split('T')[0];
-      const yesterday = new Date(now.getTime() - 24*60*60*1000).toISOString().split('T')[0];
-
-      const { data: attendances } = await supabase
+      // Kita hapus filter tanggal yang ketat.
+      // Kita cari saja data attendance milik user yang check_out nya masih NULL.
+      // Kita urutkan dari yang paling baru check_in nya.
+      const { data: activeSessions, error } = await supabase
         .from('attendances')
-        .select('id, shift, check_in, check_out, attendance_date')
-        .in('attendance_date', [yesterday, todayStr])
-        .eq('user_id', userId);
+        .select('id, shift, check_in, attendance_date')
+        .eq('user_id', userId)
+        .is('check_out', null) // KUNCINYA DISINI: Cari yg belum checkout
+        .order('check_in', { ascending: false }) // Ambil yang paling terakhir masuk
+        .limit(1);
 
-      if (!attendances || attendances.length === 0) {
-        setAttendanceId(null); setCurrentShift(null); setLogbookStatus(null); setCanCheckOut(false); return;
+      if (error) throw error;
+
+      if (!activeSessions || activeSessions.length === 0) {
+        // Benar-benar tidak ada data absen aktif
+        setAttendanceId(null); 
+        setCurrentShift(null); 
+        setLogbookStatus(null); 
+        setCanCheckOut(false);
+        return;
       }
 
-      const activeShift = attendances.find(a => !a.check_out);
-      if (!activeShift) { setAttendanceId(null); setCurrentShift(null); setLogbookStatus(null); setCanCheckOut(false); return; }
-
+      // DATA DITEMUKAN (Entah itu shift pagi atau malam, hari ini atau kemarin)
+      const activeShift = activeSessions[0];
       setAttendanceId(activeShift.id);
       setCurrentShift(activeShift.shift as 'pagi' | 'malam');
 
+      // Cek Logbook berdasarkan ID absen tersebut
       const { data: logbook } = await supabase
         .from('logbooks')
         .select('status')
         .eq('attendance_id', activeShift.id)
-        .eq('shift', activeShift.shift)
         .maybeSingle();
 
-      setLogbookStatus(logbook?.status || 'IN_PROGRESS');
-      setCanCheckOut(VALID_LOGBOOK_STATUS.includes(logbook?.status?.toUpperCase() || ''));
+      const status = logbook?.status || 'IN_PROGRESS';
+      setLogbookStatus(status);
+      
+      // Validasi checkout
+      setCanCheckOut(VALID_LOGBOOK_STATUS.includes(status.toUpperCase()));
+
     } catch (err) {
       console.error('DEBUG fetchActiveShift error:', err);
       setCanCheckOut(false);
+    } finally {
+      setLoadingData(false);
     }
   };
 
-  useEffect(() => { fetchActiveShift(); }, [userId, currentTime]);
+  // Re-fetch setiap kali user id berubah
+  useEffect(() => { fetchActiveShift(); }, [userId]);
 
   // --- Handle CheckOut ---
   const handleCheckOut = async () => {
-    if (!attendanceId) return toast.error('Attendance shift ini belum tersedia.');
+    if (!attendanceId) return toast.error('Tidak ada sesi absen yang aktif.');
     if (!location) return toast.error('Lokasi belum terdeteksi.');
-    if (!currentShift) return toast.error('Shift belum terdeteksi.');
-    if (!logbookStatus || !VALID_LOGBOOK_STATUS.includes(logbookStatus.toUpperCase()))
-      return toast.error('Logbook belum COMPLETED.');
-    if (distance !== null && distance > OFFICE_LOCATION.RADIUS_M)
+    if (!currentShift) return toast.error('Shift error.');
+    
+    if (!logbookStatus || !VALID_LOGBOOK_STATUS.includes(logbookStatus.toUpperCase())) {
+      return toast.error('Anda harus mengisi dan Submit Logbook terlebih dahulu!');
+    }
+      
+    if (distance !== null && distance > OFFICE_LOCATION.RADIUS_M) {
       return toast.error('Anda berada di luar radius kantor.');
+    }
 
     setIsSubmitting(true);
     try {
@@ -144,15 +168,16 @@ export default function CheckOutForm() {
           check_out_latitude: location.lat,
           check_out_longitude: location.lon,
           check_out_distance_m: distance,
-          status: 'COMPLETED'
+          status: 'Hadir' // Final status
         })
         .eq('id', attendanceId);
+      
       if (error) throw error;
 
       toast.success(`✅ Absen Pulang Shift ${currentShift.toUpperCase()} berhasil!`);
       router.replace('/dashboard');
     } catch (err: any) {
-      console.error('DEBUG handleCheckOut error full:', err);
+      console.error('DEBUG handleCheckOut error:', err);
       toast.error(err?.message || 'Gagal absen pulang');
     } finally { setIsSubmitting(false); }
   };
@@ -167,7 +192,7 @@ export default function CheckOutForm() {
         <button onClick={() => router.back()} className="p-1 mr-4 text-white hover:text-gray-300 transition">
           <ArrowLeft size={24} />
         </button>
-        <h1 className="text-xl font-bold">Absen Pulang Shift {currentShift?.toUpperCase() || '...'} </h1>
+        <h1 className="text-xl font-bold">Absen Pulang {currentShift ? `Shift ${currentShift.toUpperCase()}` : ''}</h1>
       </header>
 
       <main className="p-6">
@@ -178,30 +203,64 @@ export default function CheckOutForm() {
           <p className="text-md text-gray-500">{formattedDate}</p>
         </div>
 
+        {/* STATUS CARD */}
         <div className="bg-white p-4 rounded-xl shadow-md border mb-5">
-          <p className="font-semibold text-gray-700 mb-1">Status Lokasi:</p>
-          <p className={`text-sm ${isOutOfRadius ? 'text-red-600' : 'text-green-600'}`}>{locationStatus}</p>
-          {distance !== null && <p className="mt-1 text-sm text-gray-600">Jarak dari kantor: <b>{distance.toFixed(1)} meter</b></p>}
-          <p className="mt-2 text-sm text-gray-600"><b>Alamat Saat Ini:</b><br />{address}</p>
-          <p className="mt-2 text-xs text-gray-400">Koordinat: {location ? `${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}` : '...'}</p>
+          {loadingData ? (
+             <p className="text-center text-gray-500">Mengecek data absen...</p>
+          ) : !attendanceId ? (
+             <div className="p-3 bg-red-50 text-red-700 rounded-lg text-center font-medium">
+               ⚠️ Tidak ditemukan data absen yang belum pulang.
+               <br/><span className="text-xs font-normal">(Pastikan Anda sudah Absen Masuk sebelumnya)</span>
+             </div>
+          ) : (
+             <div className="space-y-2">
+                {/* INFO SHIFT AKTIF */}
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-center">
+                    <p className="text-blue-800 font-semibold">Sesi Aktif: SHIFT {currentShift?.toUpperCase()}</p>
+                </div>
 
-          <button onClick={fetchLocation} className="mt-3 bg-blue-900 hover:bg-blue-800 text-white text-sm font-semibold py-2 px-3 rounded-lg">
-            Ambil Ulang Lokasi
-          </button>
+                <div className={`p-3 rounded-lg flex justify-between items-center ${canCheckOut ? 'bg-green-50 text-green-800' : 'bg-yellow-50 text-yellow-800'}`}>
+                   <span>Status Logbook:</span>
+                   <span className="font-bold">{logbookStatus === 'COMPLETED' ? 'SUDAH DIISI ✅' : 'BELUM DIISI ❌'}</span>
+                </div>
+                
+                <div>
+                  <p className="font-semibold text-gray-700 mb-1">Status Lokasi:</p>
+                  <p className={`text-sm ${isOutOfRadius ? 'text-red-600' : 'text-green-600'}`}>{locationStatus}</p>
+                  {distance !== null && <p className="mt-1 text-sm text-gray-600">Jarak: <b>{distance.toFixed(1)} meter</b></p>}
+                </div>
+                
+                <button onClick={fetchLocation} className="mt-2 w-full bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm font-semibold py-2 px-3 rounded-lg">
+                  Ambil Ulang Lokasi
+                </button>
+             </div>
+          )}
         </div>
 
         <button
           onClick={handleCheckOut}
-          disabled={isSubmitting || !canCheckOut || isOutOfRadius || !currentShift}
+          disabled={isSubmitting || !canCheckOut || isOutOfRadius || !attendanceId}
           className={`w-full py-4 text-white font-extrabold rounded-xl transition duration-300 shadow-xl ${
-            isSubmitting ? 'bg-gray-400 cursor-wait' : canCheckOut ? 'bg-blue-900 hover:bg-blue-800 shadow-blue-500/50' : 'bg-gray-400 cursor-not-allowed'
+            isSubmitting || !attendanceId ? 'bg-gray-400 cursor-not-allowed' 
+            : !canCheckOut ? 'bg-gray-400 cursor-not-allowed' 
+            : isOutOfRadius ? 'bg-red-400 cursor-not-allowed' 
+            : 'bg-blue-900 hover:bg-blue-800 shadow-blue-500/50'
           }`}
         >
-          {isSubmitting ? 'Memproses...' : isOutOfRadius ? 'Anda di luar radius kantor' : !currentShift ? 'Shift belum terdeteksi' : `SUBMIT ABSEN PULANG`}
+          {isSubmitting ? 'Memproses...' 
+           : !attendanceId ? 'Tidak Ada Absen Aktif'
+           : !canCheckOut ? 'Isi Logbook Dulu'
+           : isOutOfRadius ? 'Di Luar Jangkauan' 
+           : `SUBMIT ABSEN PULANG`}
         </button>
 
         <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 text-center">
-          <p>Absen Pulang hanya bisa dilakukan setelah logbook <b>COMPLETED</b> dan lokasi berada dalam radius 500 meter dari kantor.</p>
+          <p>Syarat Absen Pulang:</p>
+          <ul className="list-disc list-inside text-left ml-4 mt-1">
+            <li>Sudah Absen Masuk (Sistem akan mendeteksi shift terakhir yang belum di-checkout).</li>
+            <li>Logbook sudah disubmit (Status: COMPLETED).</li>
+            <li>Berada dalam radius 500 meter kantor.</li>
+          </ul>
         </div>
       </main>
     </div>
