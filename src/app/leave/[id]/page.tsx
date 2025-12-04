@@ -53,11 +53,12 @@ export default function LeavePublicPage() {
     try {
       const leaveId = Number(id)
       const { data: leaveData, error } = await supabase
-        .from('leave_requests')
-        .select('*, profiles(full_name, position)')
-        .eq('id', leaveId)
-        .eq('status', 'Disetujui') // hanya publik cuti yang disetujui
-        .single()
+  .from('leave_requests')
+  .select('*, profiles(id, full_name, position)')
+  .eq('id', leaveId)
+  .eq('status', 'Disetujui')
+  .single()
+
 
       if (error || !leaveData) throw error || new Error('Data tidak ditemukan')
       setLeave(leaveData)
