@@ -57,6 +57,21 @@ export default function LeavePublicPage() {
     }
   }
 
+  // Fungsi menghitung durasi hari
+  const calculateDuration = (startStr: string, endStr: string) => {
+    try {
+      const start = new Date(startStr)
+      const end = new Date(endStr)
+      // Hitung selisih waktu
+      const diffTime = Math.abs(end.getTime() - start.getTime())
+      // Konversi ke hari ( + 1 karena inklusif, misal tgl 28-28 itu dihitung 1 hari)
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1
+      return diffDays
+    } catch {
+      return 0
+    }
+  }
+
   const fetchLeaveDetail = async () => {
     setLoading(true)
     try {
@@ -190,9 +205,14 @@ export default function LeavePublicPage() {
                         </div>
                         <div>
                             <p className="text-xs text-gray-500 font-medium">Durasi Tanggal</p>
-                            <p className="text-base font-medium text-gray-900">
-                                {formatDate(leave.start_date)} <span className="text-gray-400 mx-1">s/d</span> {formatDate(leave.end_date)}
-                            </p>
+                            <div className="flex flex-col">
+                                <p className="text-base font-medium text-gray-900">
+                                    {formatDate(leave.start_date)} <span className="text-gray-400 mx-1">s/d</span> {formatDate(leave.end_date)}
+                                </p>
+                                <p className="text-sm font-bold text-blue-700 mt-1">
+                                    ({calculateDuration(leave.start_date, leave.end_date)} Hari)
+                                </p>
+                            </div>
                         </div>
                     </div>
 
