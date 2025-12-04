@@ -72,7 +72,7 @@ export default function LeavePublicPage() {
       setLeave(leaveData)
     } catch (err) {
       console.error('❌ Gagal mengambil data cuti:', err)
-      // alert('❌ Gagal mengambil data cuti.') // Optional: hilangkan alert agar UI lebih bersih
+      // alert('❌ Gagal mengambil data cuti.') 
     } finally {
       setLoading(false)
     }
@@ -86,17 +86,17 @@ export default function LeavePublicPage() {
 
   if (loading)
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-slate-50 gap-3">
-        <Loader2 className="animate-spin w-10 h-10 text-blue-600" />
-        <p className="text-slate-500 font-medium animate-pulse">Memverifikasi Dokumen...</p>
+      <div className="flex h-screen flex-col items-center justify-center bg-gray-50 gap-3">
+        <Loader2 className="animate-spin w-10 h-10 text-blue-900" />
+        <p className="text-blue-900/60 font-medium animate-pulse">Memverifikasi Dokumen...</p>
       </div>
     )
 
   if (!leave)
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4">
-        <div className="bg-white p-8 rounded-xl shadow-lg text-center max-w-md w-full border-t-4 border-red-500">
-            <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
+        <div className="bg-white p-8 rounded-xl shadow-lg text-center max-w-md w-full border-t-4 border-red-600">
+            <XCircle className="w-16 h-16 text-red-600 mx-auto mb-4" />
             <h1 className="text-xl font-bold text-gray-800">Data Tidak Ditemukan</h1>
             <p className="text-gray-500 mt-2">Dokumen cuti mungkin tidak valid, belum disetujui, atau ID yang Anda masukkan salah.</p>
         </div>
@@ -108,20 +108,20 @@ export default function LeavePublicPage() {
   const qrValue = `${domain}/leave/${leave.id}`
 
   return (
-    <div className="min-h-screen bg-slate-100 py-10 px-4 print:bg-white print:p-0 flex justify-center items-start">
+    <div className="min-h-screen bg-gray-100 py-10 px-4 print:bg-white print:p-0 flex justify-center items-start font-sans">
       
       {/* Container Kertas */}
-      <div className="bg-white w-full max-w-3xl rounded-2xl shadow-xl overflow-hidden print:shadow-none print:rounded-none border border-slate-200 print:border-none">
+      <div className="bg-white w-full max-w-3xl rounded-2xl shadow-xl overflow-hidden print:shadow-none print:rounded-none border border-gray-200 print:border-none">
         
-        {/* === HEADER === */}
-        <div className="bg-slate-900 text-white p-8 text-center print:bg-white print:text-black print:border-b-2 print:border-black">
+        {/* === HEADER (NAVY THEME) === */}
+        <div className="bg-blue-900 text-white p-8 text-center print:bg-white print:text-black print:border-b-2 print:border-black">
             <div className="flex justify-center mb-4 print:hidden">
-                <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-sm">
+                <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-sm border border-white/20">
                     <FileText className="w-8 h-8 text-white" />
                 </div>
             </div>
             <h1 className="text-2xl md:text-3xl font-bold tracking-wide uppercase font-serif">Surat Izin Cuti</h1>
-            <p className="text-slate-300 text-sm mt-1 print:text-gray-600">Dokumen Digital Resmi Pegawai</p>
+            <p className="text-blue-100 text-sm mt-1 print:text-gray-600">Dokumen Digital Resmi Pegawai</p>
         </div>
 
         {/* === BODY === */}
@@ -129,12 +129,12 @@ export default function LeavePublicPage() {
 
             {/* Status Badge */}
             <div className="flex justify-center">
-                <div className={`px-6 py-2 rounded-full border flex items-center gap-2 font-bold uppercase tracking-wider text-sm
+                <div className={`px-6 py-2 rounded-full border flex items-center gap-2 font-bold uppercase tracking-wider text-sm shadow-sm
                     ${leave.status === 'Disetujui' 
-                        ? 'bg-green-50 border-green-200 text-green-700' 
+                        ? 'bg-green-50 border-green-200 text-green-800' 
                         : leave.status === 'Ditolak' 
-                        ? 'bg-red-50 border-red-200 text-red-700' 
-                        : 'bg-gray-50 border-gray-200 text-gray-700'
+                        ? 'bg-red-50 border-red-200 text-red-800' 
+                        : 'bg-gray-50 border-gray-200 text-gray-800'
                     }`}>
                     {leave.status === 'Disetujui' && <CheckCircle2 className="w-4 h-4" />}
                     {leave.status === 'Ditolak' && <XCircle className="w-4 h-4" />}
@@ -147,83 +147,83 @@ export default function LeavePublicPage() {
                 
                 {/* Kolom Kiri: Pegawai */}
                 <div className="space-y-6">
-                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest border-b pb-2 mb-4">Data Pegawai</h3>
+                    <h3 className="text-xs font-bold text-blue-900/60 uppercase tracking-widest border-b border-blue-100 pb-2 mb-4">Data Pegawai</h3>
                     
                     <div className="flex items-start gap-3 group">
-                        <div className="mt-1 p-2 bg-slate-50 rounded-lg group-hover:bg-blue-50 transition-colors">
-                            <User className="w-5 h-5 text-slate-500 group-hover:text-blue-600" />
+                        <div className="mt-1 p-2 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors text-blue-700">
+                            <User className="w-5 h-5" />
                         </div>
                         <div>
-                            <p className="text-xs text-slate-500 font-medium">Nama Lengkap</p>
-                            <p className="text-lg font-semibold text-slate-800">{leave.profiles?.full_name || '-'}</p>
+                            <p className="text-xs text-gray-500 font-medium">Nama Lengkap</p>
+                            <p className="text-lg font-semibold text-gray-900">{leave.profiles?.full_name || '-'}</p>
                         </div>
                     </div>
 
                     <div className="flex items-start gap-3 group">
-                        <div className="mt-1 p-2 bg-slate-50 rounded-lg group-hover:bg-blue-50 transition-colors">
-                            <Briefcase className="w-5 h-5 text-slate-500 group-hover:text-blue-600" />
+                        <div className="mt-1 p-2 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors text-blue-700">
+                            <Briefcase className="w-5 h-5" />
                         </div>
                         <div>
-                            <p className="text-xs text-slate-500 font-medium">Jabatan / Posisi</p>
-                            <p className="text-lg font-semibold text-slate-800">{leave.profiles?.position || '-'}</p>
+                            <p className="text-xs text-gray-500 font-medium">Jabatan / Posisi</p>
+                            <p className="text-lg font-semibold text-gray-900">{leave.profiles?.position || '-'}</p>
                         </div>
                     </div>
                 </div>
 
                 {/* Kolom Kanan: Detail Cuti */}
                 <div className="space-y-6">
-                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest border-b pb-2 mb-4">Detail Permohonan</h3>
+                    <h3 className="text-xs font-bold text-blue-900/60 uppercase tracking-widest border-b border-blue-100 pb-2 mb-4">Detail Permohonan</h3>
                     
                     <div className="flex items-start gap-3 group">
-                        <div className="mt-1 p-2 bg-slate-50 rounded-lg group-hover:bg-blue-50 transition-colors">
-                            <Clock className="w-5 h-5 text-slate-500 group-hover:text-blue-600" />
+                        <div className="mt-1 p-2 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors text-blue-700">
+                            <Clock className="w-5 h-5" />
                         </div>
                         <div>
-                            <p className="text-xs text-slate-500 font-medium">Jenis Cuti</p>
-                            <p className="text-lg font-semibold text-slate-800">{leave.leave_type}</p>
+                            <p className="text-xs text-gray-500 font-medium">Jenis Cuti</p>
+                            <p className="text-lg font-semibold text-gray-900">{leave.leave_type}</p>
                         </div>
                     </div>
 
                     <div className="flex items-start gap-3 group">
-                        <div className="mt-1 p-2 bg-slate-50 rounded-lg group-hover:bg-blue-50 transition-colors">
-                            <CalendarDays className="w-5 h-5 text-slate-500 group-hover:text-blue-600" />
+                        <div className="mt-1 p-2 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors text-blue-700">
+                            <CalendarDays className="w-5 h-5" />
                         </div>
                         <div>
-                            <p className="text-xs text-slate-500 font-medium">Durasi Tanggal</p>
-                            <p className="text-base font-medium text-slate-800">
-                                {formatDate(leave.start_date)} <span className="text-slate-400 mx-1">s/d</span> {formatDate(leave.end_date)}
+                            <p className="text-xs text-gray-500 font-medium">Durasi Tanggal</p>
+                            <p className="text-base font-medium text-gray-900">
+                                {formatDate(leave.start_date)} <span className="text-gray-400 mx-1">s/d</span> {formatDate(leave.end_date)}
                             </p>
                         </div>
                     </div>
 
                     <div className="flex items-start gap-3 group">
-                        <div className="mt-1 p-2 bg-slate-50 rounded-lg group-hover:bg-blue-50 transition-colors">
-                            <FileText className="w-5 h-5 text-slate-500 group-hover:text-blue-600" />
+                        <div className="mt-1 p-2 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors text-blue-700">
+                            <FileText className="w-5 h-5" />
                         </div>
                         <div>
-                            <p className="text-xs text-slate-500 font-medium">Alasan / Keterangan</p>
-                            <p className="text-base font-medium text-slate-800 italic">"{leave.reason || '-'}"</p>
+                            <p className="text-xs text-gray-500 font-medium">Alasan / Keterangan</p>
+                            <p className="text-base font-medium text-gray-900 italic">"{leave.reason || '-'}"</p>
                         </div>
                     </div>
                 </div>
             </div>
 
             {/* Divider */}
-            <hr className="border-dashed border-slate-300 my-8" />
+            <hr className="border-dashed border-gray-300 my-8" />
 
             {/* Footer / QR Section */}
             <div className="flex flex-col items-center justify-center text-center space-y-4">
-                <div className="bg-white p-2 rounded-xl border-2 border-slate-100 shadow-sm">
+                <div className="bg-white p-2 rounded-xl border-2 border-gray-100 shadow-sm">
                      <QRCodeCanvas value={qrValue} size={130} />
                 </div>
                 <div className="space-y-1">
-                    <p className="text-sm font-semibold text-slate-700">Verifikasi Keaslian Dokumen</p>
-                    <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                    <p className="text-sm font-semibold text-blue-900">Verifikasi Keaslian Dokumen</p>
+                    <p className="text-xs text-gray-500 max-w-xs mx-auto">
                         Scan QR Code di atas untuk mengakses halaman validasi online dokumen ini secara langsung.
                     </p>
                 </div>
                 <div className="pt-4 print:hidden">
-                    <Button onClick={handlePrint} variant="outline" className="gap-2 border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900">
+                    <Button onClick={handlePrint} variant="outline" className="gap-2 border-blue-200 text-blue-900 hover:bg-blue-50 hover:text-blue-950 hover:border-blue-300">
                         <Printer className="w-4 h-4" />
                         Cetak / Simpan PDF
                     </Button>
@@ -232,12 +232,12 @@ export default function LeavePublicPage() {
 
         </div>
         
-        {/* Decorative Bottom Bar */}
-        <div className="h-2 bg-slate-900 w-full print:hidden"></div>
+        {/* Decorative Bottom Bar (NAVY) */}
+        <div className="h-3 bg-blue-900 w-full print:hidden"></div>
       </div>
       
       {/* Copyright Footer */}
-      <div className="fixed bottom-4 text-center w-full text-xs text-slate-400 print:hidden pointer-events-none">
+      <div className="fixed bottom-4 text-center w-full text-xs text-gray-400 print:hidden pointer-events-none">
         &copy; {new Date().getFullYear()} Sistem Informasi Kepegawaian
       </div>
 
