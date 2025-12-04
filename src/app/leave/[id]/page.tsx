@@ -128,15 +128,15 @@ export default function LeavePublicPage() {
       {/* Container Kertas */}
       <div className="bg-white w-full max-w-3xl rounded-2xl shadow-xl overflow-hidden print:shadow-none print:rounded-none border border-gray-200 print:border-none">
         
-        {/* === HEADER (NAVY THEME) === */}
-        <div className="bg-blue-900 text-white p-8 text-center print:bg-white print:text-black print:border-b-2 print:border-black">
-            <div className="flex justify-center mb-4 print:hidden">
-                <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-sm border border-white/20">
-                    <FileText className="w-8 h-8 text-white" />
+        {/* === HEADER (NAVY THEME - VERSI LEBIH KECIL/COMPACT) === */}
+        <div className="bg-blue-900 text-white p-5 text-center print:bg-white print:text-black print:border-b-2 print:border-black">
+            <div className="flex justify-center mb-2 print:hidden">
+                <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-sm border border-white/20">
+                    <FileText className="w-6 h-6 text-white" />
                 </div>
             </div>
-            <h1 className="text-2xl md:text-3xl font-bold tracking-wide uppercase font-serif">Surat Izin Cuti</h1>
-            <p className="text-blue-100 text-sm mt-1 print:text-gray-600">Dokumen Digital Resmi Pegawai</p>
+            <h1 className="text-xl md:text-2xl font-bold tracking-wide uppercase font-serif">Surat Izin Cuti</h1>
+            <p className="text-blue-100 text-xs mt-1 print:text-gray-600">Dokumen Digital Resmi Pegawai</p>
         </div>
 
         {/* === BODY === */}
