@@ -4,9 +4,8 @@ import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Button } from '@/components/ui/button'
-import { Loader2, ArrowLeft, FileSpreadsheet, Search, Filter } from 'lucide-react'
+import { Loader2, ArrowLeft, FileSpreadsheet, Search, Filter, Info } from 'lucide-react' // Added Info icon
 import toast, { Toaster } from 'react-hot-toast'
-// GANTI IMPORT DARI 'xlsx' KE 'xlsx-js-style'
 import XLSX from 'xlsx-js-style' 
 import { 
   format, 
@@ -47,6 +46,7 @@ type MatrixRow = {
     code: 'H' | '2x' | 'T' | '2T¹' | '2T²' | 'I' | 'C' | 'S' | 'A' | '½' | '-' 
     color: string
     isHoliday: boolean
+    tooltip: string // Added tooltip field
   }[]
   stats: {
     H: number       
@@ -189,6 +189,7 @@ export default function RekapAbsensiMatrix() {
         
         let code: MatrixRow['days'][0]['code'] = '-'
         let color = 'bg-white'
+        let tooltip = ''
 
         if (attendanceMap.has(key)) {
             const shifts = attendanceMap.get(key) || []
@@ -201,27 +202,75 @@ export default function RekapAbsensiMatrix() {
             })
 
             if (shifts.length > 1) {
-                if (lateCount === 1) { code = '2T¹'; color = 'bg-yellow-600 text-white font-bold' }
-                else if (lateCount >= 2) { code = '2T²'; color = 'bg-yellow-700 text-white font-bold' }
-                else { code = '2x'; color = 'bg-green-600 text-white font-bold' }
+                if (lateCount === 1) { 
+                    code = '2T¹'; 
+                    color = 'bg-yellow-600 text-white font-bold'; 
+                    tooltip = 'Hadir 2 Shift (Salah satu terlambat)';
+                } else if (lateCount >= 2) { 
+                    code = '2T²'; 
+                    color = 'bg-yellow-700 text-white font-bold'; 
+                    tooltip = 'Hadir 2 Shift (Keduanya terlambat)';
+                } else { 
+                    code = '2x'; 
+                    color = 'bg-green-600 text-white font-bold'; 
+                    tooltip = 'Hadir 2 Shift (Tepat Waktu)';
+                }
             } else {
-                if (lateCount > 0) { code = 'T'; color = 'bg-yellow-500 text-white font-bold' }
-                else { code = 'H'; color = 'bg-green-200 text-green-800 border-green-300' }
+                if (lateCount > 0) { 
+                    code = 'T'; 
+                    color = 'bg-yellow-500 text-white font-bold'; 
+                    tooltip = 'Hadir 1 Shift (Terlambat)';
+                } else { 
+                    code = 'H'; 
+                    color = 'bg-green-200 text-green-800 border-green-300'; 
+                    tooltip = 'Hadir 1 Shift (Tepat Waktu)';
+                }
             }
             stats.H += 1; stats.Sft += shifts.length; stats.T += lateCount;
         }
         else if (leaveMap.has(key)) {
             const info = leaveMap.get(key)!
-            if (info.half_day) { code = '½'; color = 'bg-purple-200 text-purple-800'; stats.Half++ }
-            else if (info.type.toLowerCase().includes('sakit')) { code = 'S'; color = 'bg-orange-200 text-orange-800'; stats.S++ }
-            else { code = 'C'; color = 'bg-blue-200 text-blue-800'; stats.C++ }
+            if (info.half_day) { 
+                code = '½'; 
+                color = 'bg-purple-200 text-purple-800'; 
+                tooltip = 'Cuti Setengah Hari';
+                stats.Half++ 
+            } else if (info.type.toLowerCase().includes('sakit')) { 
+                code = 'S'; 
+                color = 'bg-orange-200 text-orange-800'; 
+                tooltip = `Sakit: ${info.type}`;
+                stats.S++ 
+            } else { 
+                code = 'C'; 
+                color = 'bg-blue-200 text-blue-800'; 
+                tooltip = `Cuti: ${info.type}`;
+                stats.C++ 
+            }
         }
-        else if (permissionSet.has(key)) { code = 'I'; color = 'bg-yellow-200 text-yellow-800'; stats.I++ }
-        else if (isWeekend) { code = '-'; color = 'bg-red-500 text-white' }
-        else if (isAfter(today, dateObj)) { code = 'A'; color = 'bg-red-50 text-red-600 font-bold'; stats.A++ }
-        else { code = '-'; color = 'bg-white' }
+        else if (permissionSet.has(key)) { 
+            code = 'I'; 
+            color = 'bg-yellow-200 text-yellow-800'; 
+            tooltip = 'Izin (Disetujui)';
+            stats.I++ 
+        }
+        else if (isWeekend) { 
+            code = '-'; 
+            color = 'bg-red-500 text-white'; 
+            tooltip = 'Hari Libur / Akhir Pekan';
+        }
+        else if (isAfter(today, dateObj)) { 
+            code = 'A'; 
+            color = 'bg-red-50 text-red-600 font-bold'; 
+            tooltip = 'Alpha / Tidak Absen';
+            stats.A++ 
+        }
+        else { 
+            code = '-'; 
+            color = 'bg-white';
+            tooltip = 'Belum ada data';
+        }
 
-        rowData.push({ date: dateStr, code, color, isHoliday: isWeekend })
+        rowData.push({ date: dateStr, code, color, isHoliday: isWeekend, tooltip })
       })
 
       return { no: index + 1, profile, days: rowData, stats }
@@ -229,7 +278,7 @@ export default function RekapAbsensiMatrix() {
   }, [profiles, attendanceMap, leaveMap, permissionSet, month, year, searchName])
 
   // =========================================================================
-  // 3. EXPORT TO EXCEL WITH STYLING
+  // 3. EXPORT TO EXCEL WITH STYLING (UPDATED)
   // =========================================================================
   const exportToExcel = () => {
     if (matrixData.length === 0) {
@@ -239,13 +288,24 @@ export default function RekapAbsensiMatrix() {
 
     const daysCount = getDaysInMonth(new Date(year, month))
     const daysHeader = Array.from({ length: daysCount }, (_, i) => (i + 1).toString())
+    const monthName = format(new Date(year, month), 'MMMM yyyy', { locale: idLocale })
 
-    // 1. Definisikan Styles
+    // --- A. DEFINISI STYLES ---
     const borderStyle = {
       top: { style: "thin", color: { rgb: "000000" } },
       bottom: { style: "thin", color: { rgb: "000000" } },
       left: { style: "thin", color: { rgb: "000000" } },
       right: { style: "thin", color: { rgb: "000000" } }
+    }
+
+    const titleStyle = {
+      font: { sz: 14, bold: true },
+      alignment: { horizontal: "center", vertical: "center" }
+    }
+
+    const periodStyle = {
+      font: { sz: 11, bold: true },
+      alignment: { horizontal: "center", vertical: "center" }
     }
 
     const headerStyle = {
@@ -256,100 +316,131 @@ export default function RekapAbsensiMatrix() {
     }
 
     const styles: Record<string, any> = {
-      'H': { fill: { fgColor: { rgb: "C6EFCE" } }, font: { color: { rgb: "006100" }, bold: true } }, // Green
-      '2x': { fill: { fgColor: { rgb: "16A34A" } }, font: { color: { rgb: "FFFFFF" }, bold: true } }, // Dark Green
-      'T': { fill: { fgColor: { rgb: "EAB308" } }, font: { color: { rgb: "FFFFFF" }, bold: true } }, // Yellow
-      '2T¹': { fill: { fgColor: { rgb: "CA8A04" } }, font: { color: { rgb: "FFFFFF" }, bold: true } }, // Dark Yellow
-      '2T²': { fill: { fgColor: { rgb: "A16207" } }, font: { color: { rgb: "FFFFFF" }, bold: true } }, // Brown
-      'C': { fill: { fgColor: { rgb: "BFDBFE" } }, font: { color: { rgb: "1E3A8A" }, bold: true } }, // Blue
-      'S': { fill: { fgColor: { rgb: "FED7AA" } }, font: { color: { rgb: "9A3412" }, bold: true } }, // Orange
-      'I': { fill: { fgColor: { rgb: "FEF08A" } }, font: { color: { rgb: "854D0E" }, bold: true } }, // Light Yellow
-      '½': { fill: { fgColor: { rgb: "E9D5FF" } }, font: { color: { rgb: "6B21A8" }, bold: true } }, // Purple
-      'A': { fill: { fgColor: { rgb: "EF4444" } }, font: { color: { rgb: "FFFFFF" }, bold: true } }, // Red
-      'WEEKEND': { fill: { fgColor: { rgb: "EF4444" } } }, // Red Background for Holiday
-      'DEFAULT': { alignment: { horizontal: "center" } }
+      'H': { fill: { fgColor: { rgb: "C6EFCE" } }, font: { color: { rgb: "006100" }, bold: true } },
+      '2x': { fill: { fgColor: { rgb: "16A34A" } }, font: { color: { rgb: "FFFFFF" }, bold: true } },
+      'T': { fill: { fgColor: { rgb: "EAB308" } }, font: { color: { rgb: "FFFFFF" }, bold: true } },
+      '2T¹': { fill: { fgColor: { rgb: "CA8A04" } }, font: { color: { rgb: "FFFFFF" }, bold: true } },
+      '2T²': { fill: { fgColor: { rgb: "A16207" } }, font: { color: { rgb: "FFFFFF" }, bold: true } },
+      'C': { fill: { fgColor: { rgb: "BFDBFE" } }, font: { color: { rgb: "1E3A8A" }, bold: true } },
+      'S': { fill: { fgColor: { rgb: "FED7AA" } }, font: { color: { rgb: "9A3412" }, bold: true } },
+      'I': { fill: { fgColor: { rgb: "FEF08A" } }, font: { color: { rgb: "854D0E" }, bold: true } },
+      '½': { fill: { fgColor: { rgb: "E9D5FF" } }, font: { color: { rgb: "6B21A8" }, bold: true } },
+      'A': { fill: { fgColor: { rgb: "EF4444" } }, font: { color: { rgb: "FFFFFF" }, bold: true } },
+      'WEEKEND': { fill: { fgColor: { rgb: "EF4444" } } },
     }
 
-    // 2. Siapkan Data Dasar
-    const headerRow = [
+    // --- B. BUILD TABLE HEADER ---
+    const tableHeaderLabel = [
       "No", "Nama Pegawai", "Jabatan", ...daysHeader, 
       "Total Hari (H)", "Total Shift", "Telat", "Izin", "Cuti", "Sakit", "½ Hari", "Alpha"
     ]
-    
-    // 3. Bangun Worksheet Manual dengan Style
-    // SheetJS Pro/Style structure: { v: value, s: style }
-    const ws_data: any[][] = []
+    const tableHeaderRow = tableHeaderLabel.map(h => ({ v: h, s: headerStyle }))
 
-    // A. Header Row
-    const ws_header = headerRow.map(h => ({ v: h, s: headerStyle }))
-    ws_data.push(ws_header)
-
-    // B. Body Rows
+    // --- C. BUILD TABLE BODY ---
+    const tableBodyRows: any[][] = []
     matrixData.forEach(row => {
       const rowCells: any[] = []
       
-      // Kolom Data Pegawai
       const baseStyle = { border: borderStyle, alignment: { vertical: "center" } }
       rowCells.push({ v: row.no, s: { ...baseStyle, alignment: { horizontal: "center" } } })
       rowCells.push({ v: row.profile.full_name, s: baseStyle })
       rowCells.push({ v: row.profile.position, s: baseStyle })
 
-      // Kolom Tanggal (Matrix)
       row.days.forEach(day => {
         let cellStyle = { ...baseStyle, alignment: { horizontal: "center" } }
         let val = day.code === '-' ? '' : day.code
 
         if (day.isHoliday) {
-             // Jika Weekend, warnai merah meskipun kosong
              cellStyle = { ...cellStyle, ...styles['WEEKEND'] }
-             if (val === '') val = '' // Tetap kosong tapi merah
+             if (val === '') val = ''
         } else if (styles[val]) {
-             // Jika ada kode (H, T, dll), ambil style nya
              cellStyle = { ...cellStyle, ...styles[val] }
         }
 
         rowCells.push({ v: val, s: cellStyle })
       })
 
-      // Kolom Statistik
       const statStyle = { border: borderStyle, alignment: { horizontal: "center" }, font: { bold: true } }
-      
-      // H (Green)
       rowCells.push({ v: row.stats.H, s: { ...statStyle, fill: { fgColor: { rgb: "DCFCE7" } } } })
-      // Sft (Green Darker)
       rowCells.push({ v: row.stats.Sft, s: { ...statStyle, fill: { fgColor: { rgb: "BBF7D0" } } } })
-      // T (Yellow)
       rowCells.push({ v: row.stats.T, s: { ...statStyle, fill: { fgColor: { rgb: "FEF9C3" } } } })
-      // I (Yellow Light)
       rowCells.push({ v: row.stats.I, s: { ...statStyle, fill: { fgColor: { rgb: "FEF08A" } } } })
-      // C (Blue)
       rowCells.push({ v: row.stats.C, s: { ...statStyle, fill: { fgColor: { rgb: "DBEAFE" } } } })
-      // S (Orange)
       rowCells.push({ v: row.stats.S, s: { ...statStyle, fill: { fgColor: { rgb: "FFEDD5" } } } })
-      // Half (Purple)
       rowCells.push({ v: row.stats.Half, s: { ...statStyle, fill: { fgColor: { rgb: "F3E8FF" } } } })
-      // A (Red)
       rowCells.push({ v: row.stats.A, s: { ...statStyle, fill: { fgColor: { rgb: "FEE2E2" } }, font: { color: { rgb: "DC2626" }, bold: true } } })
 
-      ws_data.push(rowCells)
+      tableBodyRows.push(rowCells)
     })
 
-    // 4. Create Workbook & Sheet
-    const ws = XLSX.utils.aoa_to_sheet([]) // Init empty
-    // Inject data with styles manual
-    // SheetJS style utils agak tricky, jadi kita pakai aoa_to_sheet biasa lalu timpa cellnya atau bangun dari nol seperti di atas.
-    // Cara di atas (ws_data array of objects) didukung oleh xlsx-js-style.
+    // --- D. BUILD LEGEND (KETERANGAN) ---
+    const legendData = [
+        { code: 'H', desc: 'Hadir (1 Shift)', style: styles['H'] },
+        { code: '2x', desc: 'Hadir (2 Shift)', style: styles['2x'] },
+        { code: 'T', desc: 'Terlambat (1 Shift)', style: styles['T'] },
+        { code: '2T¹', desc: '2 Shift (1 Telat)', style: styles['2T¹'] },
+        { code: '2T²', desc: '2 Shift (2 Telat)', style: styles['2T²'] },
+        { code: 'C', desc: 'Cuti', style: styles['C'] },
+        { code: 'S', desc: 'Sakit', style: styles['S'] },
+        { code: 'I', desc: 'Izin', style: styles['I'] },
+        { code: '½', desc: 'Setengah Hari', style: styles['½'] },
+        { code: 'A', desc: 'Alpha (Tanpa Keterangan)', style: styles['A'] },
+    ]
+
+    const legendRows: any[][] = []
+    legendRows.push([{ v: "", s: {} }]) // Jarak Kosong
+    legendRows.push([{ v: "KETERANGAN KODE:", s: { font: { bold: true, underline: true } } }])
     
-    // Load data with styles
+    legendData.forEach(item => {
+        legendRows.push([
+            { v: "", s: {} }, // Kolom No (kosong)
+            { v: item.code, s: { ...item.style, border: borderStyle, alignment: { horizontal: "center" } } }, // Kode berwarna
+            { v: item.desc, s: { alignment: { vertical: "center" } } } // Deskripsi
+        ])
+    })
+
+    // --- E. COMPOSE FINAL EXCEL DATA ---
+    const totalColumns = tableHeaderLabel.length
+    
+    // 1. Judul Utama
+    const titleRow = Array(totalColumns).fill({ v: "", s: titleStyle })
+    titleRow[0] = { v: "REKAP ABSENSI PEGAWAI", s: titleStyle }
+    
+    // 2. Sub Judul (Periode)
+    const periodRow = Array(totalColumns).fill({ v: "", s: periodStyle })
+    periodRow[0] = { v: `PERIODE: ${monthName.toUpperCase()}`, s: periodStyle }
+
+    // 3. Spasi
+    const spacerRow = [{ v: "", s: {} }]
+
+    const ws_data = [
+        titleRow,
+        periodRow,
+        spacerRow,
+        tableHeaderRow,
+        ...tableBodyRows,
+        ...legendRows
+    ]
+
+    // --- F. CREATE WORKSHEET ---
+    const ws = XLSX.utils.aoa_to_sheet([])
     XLSX.utils.sheet_add_aoa(ws, ws_data, { origin: "A1" })
 
-    // 5. Atur Lebar Kolom
-    const wscols = [{ wch: 5 }, { wch: 30 }, { wch: 20 }]
-    for(let i=0; i<daysCount; i++) wscols.push({ wch: 4 }) // Kolom tanggal kecil
-    for(let i=0; i<8; i++) wscols.push({ wch: 8 }) // Statistik
+    // --- G. MERGE CELLS (JUDUL & PERIODE) ---
+    if(!ws['!merges']) ws['!merges'] = []
+    
+    // Merge Judul (Row 0, Col 0 sampai Col Akhir)
+    ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: totalColumns - 1 } })
+    // Merge Periode (Row 1, Col 0 sampai Col Akhir)
+    ws['!merges'].push({ s: { r: 1, c: 0 }, e: { r: 1, c: totalColumns - 1 } })
 
+    // --- H. COL WIDTH ---
+    const wscols = [{ wch: 5 }, { wch: 30 }, { wch: 20 }] // No, Nama, Jabatan
+    for(let i=0; i<daysCount; i++) wscols.push({ wch: 4 }) // Tanggal
+    for(let i=0; i<8; i++) wscols.push({ wch: 8 }) // Statistik
     ws['!cols'] = wscols
 
+    // --- I. SAVE ---
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Rekap Absensi")
     
@@ -405,6 +496,11 @@ export default function RekapAbsensiMatrix() {
             <Button size="sm" onClick={fetchData} variant="secondary" className="border gap-2">
                 <Filter className="w-3 h-3"/> Refresh
             </Button>
+            
+            <div className="ml-auto text-xs text-gray-500 italic hidden md:flex items-center gap-1">
+                <Info className="w-3 h-3" />
+                <span>Arahkan kursor ke kotak untuk detail</span>
+            </div>
         </div>
       </div>
 
@@ -451,7 +547,10 @@ export default function RekapAbsensiMatrix() {
                             <td className="border border-gray-300 p-1 text-gray-500">{row.profile.position}</td>
                             
                             {row.days.map((day, dIdx) => (
-                                <td key={dIdx} className={`border border-gray-300 h-8 font-bold text-[10px] ${day.color}`}>
+                                <td key={dIdx} 
+                                    className={`border border-gray-300 h-8 font-bold text-[10px] cursor-help ${day.color}`}
+                                    title={day.tooltip} 
+                                >
                                     {day.code !== '-' ? day.code : ''}
                                 </td>
                             ))}
