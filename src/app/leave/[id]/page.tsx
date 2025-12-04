@@ -62,9 +62,7 @@ export default function LeavePublicPage() {
     try {
       const start = new Date(startStr)
       const end = new Date(endStr)
-      // Hitung selisih waktu
       const diffTime = Math.abs(end.getTime() - start.getTime())
-      // Konversi ke hari ( + 1 karena inklusif, misal tgl 28-28 itu dihitung 1 hari)
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1
       return diffDays
     } catch {
@@ -87,7 +85,6 @@ export default function LeavePublicPage() {
       setLeave(leaveData)
     } catch (err) {
       console.error('❌ Gagal mengambil data cuti:', err)
-      // alert('❌ Gagal mengambil data cuti.') 
     } finally {
       setLoading(false)
     }
@@ -121,146 +118,193 @@ export default function LeavePublicPage() {
   // QR value publik
   const domain = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin
   const qrValue = `${domain}/leave/${leave.id}`
+  const todayDate = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+  const duration = calculateDuration(leave.start_date, leave.end_date)
 
   return (
     <div className="min-h-screen bg-gray-100 py-10 px-4 print:bg-white print:p-0 flex justify-center items-start font-sans">
       
-      {/* Container Kertas */}
-      <div className="bg-white w-full max-w-3xl rounded-2xl shadow-xl overflow-hidden print:shadow-none print:rounded-none border border-gray-200 print:border-none">
+      {/* ===================================================================================
+          TAMPILAN WEB (MODERN NAVY) - DIAKSES DI LAYAR (HP/LAPTOP)
+          Class `print:hidden` akan menyembunyikan bagian ini saat dicetak.
+         =================================================================================== */}
+      <div className="bg-white w-full max-w-3xl rounded-2xl shadow-xl overflow-hidden border border-gray-200 print:hidden">
         
-        {/* === HEADER (NAVY THEME - VERSI LEBIH KECIL/COMPACT) === */}
-        <div className="bg-blue-900 text-white p-5 text-center print:bg-white print:text-black print:border-b-2 print:border-black">
-            <div className="flex justify-center mb-2 print:hidden">
+        {/* Header Navy */}
+        <div className="bg-blue-900 text-white p-5 text-center">
+            <div className="flex justify-center mb-2">
                 <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-sm border border-white/20">
                     <FileText className="w-6 h-6 text-white" />
                 </div>
             </div>
             <h1 className="text-xl md:text-2xl font-bold tracking-wide uppercase font-serif">Surat Izin Cuti</h1>
-            <p className="text-blue-100 text-xs mt-1 print:text-gray-600">Dokumen Digital Resmi Pegawai</p>
+            <p className="text-blue-100 text-xs mt-1">Dokumen Digital Resmi Pegawai</p>
         </div>
 
-        {/* === BODY === */}
+        {/* Body Modern */}
         <div className="p-8 md:p-12 space-y-8">
-
-            {/* Status Badge */}
             <div className="flex justify-center">
                 <div className={`px-6 py-2 rounded-full border flex items-center gap-2 font-bold uppercase tracking-wider text-sm shadow-sm
                     ${leave.status === 'Disetujui' 
                         ? 'bg-green-50 border-green-200 text-green-800' 
-                        : leave.status === 'Ditolak' 
-                        ? 'bg-red-50 border-red-200 text-red-800' 
-                        : 'bg-gray-50 border-gray-200 text-gray-800'
-                    }`}>
-                    {leave.status === 'Disetujui' && <CheckCircle2 className="w-4 h-4" />}
-                    {leave.status === 'Ditolak' && <XCircle className="w-4 h-4" />}
+                        : 'bg-red-50 border-red-200 text-red-800'}`}>
+                    <CheckCircle2 className="w-4 h-4" />
                     STATUS: {leave.status}
                 </div>
             </div>
 
-            {/* Grid Layout Data */}
             <div className="grid md:grid-cols-2 gap-8">
-                
-                {/* Kolom Kiri: Pegawai */}
                 <div className="space-y-6">
                     <h3 className="text-xs font-bold text-blue-900/60 uppercase tracking-widest border-b border-blue-100 pb-2 mb-4">Data Pegawai</h3>
-                    
                     <div className="flex items-start gap-3 group">
-                        <div className="mt-1 p-2 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors text-blue-700">
-                            <User className="w-5 h-5" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-gray-500 font-medium">Nama Lengkap</p>
-                            <p className="text-lg font-semibold text-gray-900">{leave.profiles?.full_name || '-'}</p>
-                        </div>
+                        <div className="mt-1 p-2 bg-blue-50 rounded-lg text-blue-700"><User className="w-5 h-5" /></div>
+                        <div><p className="text-xs text-gray-500 font-medium">Nama Lengkap</p><p className="text-lg font-semibold text-gray-900">{leave.profiles?.full_name || '-'}</p></div>
                     </div>
-
                     <div className="flex items-start gap-3 group">
-                        <div className="mt-1 p-2 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors text-blue-700">
-                            <Briefcase className="w-5 h-5" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-gray-500 font-medium">Jabatan / Posisi</p>
-                            <p className="text-lg font-semibold text-gray-900">{leave.profiles?.position || '-'}</p>
-                        </div>
+                        <div className="mt-1 p-2 bg-blue-50 rounded-lg text-blue-700"><Briefcase className="w-5 h-5" /></div>
+                        <div><p className="text-xs text-gray-500 font-medium">Jabatan</p><p className="text-lg font-semibold text-gray-900">{leave.profiles?.position || '-'}</p></div>
                     </div>
                 </div>
 
-                {/* Kolom Kanan: Detail Cuti */}
                 <div className="space-y-6">
                     <h3 className="text-xs font-bold text-blue-900/60 uppercase tracking-widest border-b border-blue-100 pb-2 mb-4">Detail Permohonan</h3>
-                    
                     <div className="flex items-start gap-3 group">
-                        <div className="mt-1 p-2 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors text-blue-700">
-                            <Clock className="w-5 h-5" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-gray-500 font-medium">Jenis Cuti</p>
-                            <p className="text-lg font-semibold text-gray-900">{leave.leave_type}</p>
-                        </div>
+                        <div className="mt-1 p-2 bg-blue-50 rounded-lg text-blue-700"><Clock className="w-5 h-5" /></div>
+                        <div><p className="text-xs text-gray-500 font-medium">Jenis Cuti</p><p className="text-lg font-semibold text-gray-900">{leave.leave_type}</p></div>
                     </div>
-
                     <div className="flex items-start gap-3 group">
-                        <div className="mt-1 p-2 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors text-blue-700">
-                            <CalendarDays className="w-5 h-5" />
-                        </div>
+                        <div className="mt-1 p-2 bg-blue-50 rounded-lg text-blue-700"><CalendarDays className="w-5 h-5" /></div>
                         <div>
-                            <p className="text-xs text-gray-500 font-medium">Durasi Tanggal</p>
-                            <div className="flex flex-col">
-                                <p className="text-base font-medium text-gray-900">
-                                    {formatDate(leave.start_date)} <span className="text-gray-400 mx-1">s/d</span> {formatDate(leave.end_date)}
-                                </p>
-                                <p className="text-sm font-bold text-blue-700 mt-1">
-                                    ({calculateDuration(leave.start_date, leave.end_date)} Hari)
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="flex items-start gap-3 group">
-                        <div className="mt-1 p-2 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors text-blue-700">
-                            <FileText className="w-5 h-5" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-gray-500 font-medium">Alasan / Keterangan</p>
-                            <p className="text-base font-medium text-gray-900 italic">"{leave.reason || '-'}"</p>
+                            <p className="text-xs text-gray-500 font-medium">Durasi</p>
+                            <p className="text-base font-medium text-gray-900">{formatDate(leave.start_date)} s/d {formatDate(leave.end_date)}</p>
+                            <p className="text-sm font-bold text-blue-700">({duration} Hari)</p>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* Divider */}
             <hr className="border-dashed border-gray-300 my-8" />
 
-            {/* Footer / QR Section */}
             <div className="flex flex-col items-center justify-center text-center space-y-4">
-                <div className="bg-white p-2 rounded-xl border-2 border-gray-100 shadow-sm">
-                     <QRCodeCanvas value={qrValue} size={130} />
-                </div>
+                <div className="bg-white p-2 rounded-xl border-2 border-gray-100 shadow-sm"><QRCodeCanvas value={qrValue} size={130} /></div>
                 <div className="space-y-1">
                     <p className="text-sm font-semibold text-blue-900">Verifikasi Keaslian Dokumen</p>
-                    <p className="text-xs text-gray-500 max-w-xs mx-auto">
-                        Scan QR Code di atas untuk mengakses halaman validasi online dokumen ini secara langsung.
-                    </p>
+                    <p className="text-xs text-gray-500 max-w-xs mx-auto">Scan QR Code untuk validasi online.</p>
                 </div>
-                <div className="pt-4 print:hidden">
-                    <Button onClick={handlePrint} variant="outline" className="gap-2 border-blue-200 text-blue-900 hover:bg-blue-50 hover:text-blue-950 hover:border-blue-300">
-                        <Printer className="w-4 h-4" />
-                        Cetak / Simpan PDF
+                <div className="pt-4">
+                    <Button onClick={handlePrint} variant="outline" className="gap-2 border-blue-200 text-blue-900 hover:bg-blue-50">
+                        <Printer className="w-4 h-4" /> Cetak / Simpan PDF
                     </Button>
                 </div>
             </div>
+            <div className="h-3 bg-blue-900 w-full mt-auto"></div>
+        </div>
+      </div>
 
+      {/* ===================================================================================
+          TAMPILAN CETAK/PRINT (SURAT RESMI BIASA) - HANYA MUNCUL SAAT DI-PRINT
+          Class `hidden print:block` artinya sembunyi di layar, tapi muncul saat diprint.
+         =================================================================================== */}
+      <div className="hidden print:block bg-white w-full max-w-[210mm] p-10 font-serif text-black leading-relaxed">
+        
+        {/* Kop Surat */}
+        <div className="flex items-start justify-center border-b-4 border-double border-black pb-4 mb-6 gap-4">
+            <img 
+                src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Logo_of_the_Ministry_of_Finance_of_the_Republic_of_Indonesia.svg/1200px-Logo_of_the_Ministry_of_Finance_of_the_Republic_of_Indonesia.svg.png" 
+                alt="Logo" className="w-24 h-auto object-contain"
+            />
+            <div className="text-center flex-1">
+                <h2 className="text-lg font-bold uppercase tracking-wide">Kementerian Keuangan Republik Indonesia</h2>
+                <h3 className="text-base font-bold uppercase tracking-wide">Direktorat Jenderal Perbendaharaan</h3>
+                <h4 className="text-sm font-bold uppercase">Kantor Pelayanan Perbendaharaan Negara</h4>
+                <p className="text-[10px] font-normal mt-1">
+                    Gedung Keuangan Negara, Jalan Diponegoro Nomor 123, Banda Aceh<br/>
+                    Telepon: (0651) 123456; Faksimile: (0651) 123456; Laman: www.djpb.kemenkeu.go.id
+                </p>
+            </div>
+        </div>
+
+        {/* Judul */}
+        <div className="text-center mb-8">
+            <h1 className="text-xl font-bold underline decoration-1 underline-offset-4 uppercase">SURAT IZIN CUTI</h1>
+            <p className="text-sm mt-1">Nomor: CUTI-{leave.id}/KPPN/2025</p>
+        </div>
+
+        {/* Isi Surat */}
+        <div className="text-justify text-[11pt]">
+            <p className="mb-4">
+                Pejabat yang berwenang memberikan cuti, dengan ini memberikan izin cuti kepada Pegawai Negeri Sipil / Pegawai Pemerintah di bawah ini:
+            </p>
+
+            <table className="w-full mb-6 ml-4">
+                <tbody>
+                    <tr><td className="w-40 py-1 align-top">Nama</td><td className="w-4 py-1 align-top">:</td><td className="font-bold uppercase align-top">{leave.profiles?.full_name}</td></tr>
+                    <tr><td className="py-1 align-top">Jabatan</td><td className="py-1 align-top">:</td><td className="align-top">{leave.profiles?.position}</td></tr>
+                    <tr><td className="py-1 align-top">Unit Kerja</td><td className="py-1 align-top">:</td><td className="align-top">KPPN Percontohan</td></tr>
+                </tbody>
+            </table>
+
+            <p className="mb-4">
+                Untuk melaksanakan <span className="font-bold">{leave.leave_type}</span> dengan rincian sebagai berikut:
+            </p>
+
+            {/* Tabel Detail Polos (Tanpa Icon) */}
+            <div className="border border-black mb-6 w-[95%] mx-auto">
+                <div className="grid grid-cols-[160px_1fr] border-b border-black">
+                    <div className="p-2 border-r border-black font-bold">Lama Cuti</div>
+                    <div className="p-2">{duration} (Hari Kerja)</div>
+                </div>
+                <div className="grid grid-cols-[160px_1fr] border-b border-black">
+                    <div className="p-2 border-r border-black font-bold">Tanggal Mulai</div>
+                    <div className="p-2">{formatDate(leave.start_date)}</div>
+                </div>
+                <div className="grid grid-cols-[160px_1fr] border-b border-black">
+                    <div className="p-2 border-r border-black font-bold">Tanggal Selesai</div>
+                    <div className="p-2">{formatDate(leave.end_date)}</div>
+                </div>
+                <div className="grid grid-cols-[160px_1fr]">
+                    <div className="p-2 border-r border-black font-bold">Alasan</div>
+                    <div className="p-2 italic">{leave.reason}</div>
+                </div>
+            </div>
+
+            <p className="mb-2">Selama menjalankan cuti, alamat yang dapat dihubungi adalah:</p>
+            <p className="ml-4 mb-8 italic text-sm border-b border-dotted border-black inline-block min-w-[50%]">(Sesuai data kepegawaian)</p>
+
+            <p className="mb-8">Demikian surat izin cuti ini dibuat untuk dipergunakan sebagaimana mestinya.</p>
+        </div>
+
+        {/* Tanda Tangan */}
+        <div className="flex justify-end mt-4 mr-4">
+            <div className="w-72 text-center">
+                <p className="mb-1">Ditetapkan di Banda Aceh</p>
+                <p className="mb-4">Pada tanggal {todayDate}</p>
+                
+                <p className="font-bold uppercase mb-2">Kepala Kantor,</p>
+                <p className="text-xs mb-4">(Kuasa Pengguna Anggaran)</p>
+                
+                {/* QR Code di Print: Hitam Putih polos */}
+                <div className="flex justify-center my-4">
+                     <div className="border border-gray-300 p-1">
+                        <QRCodeCanvas value={qrValue} size={90} level="H" />
+                     </div>
+                </div>
+                
+                <p className="text-[9px] text-gray-500 mb-2 italic">Ditandatangani secara elektronik</p>
+                <p className="font-bold underline uppercase">NAMA PEJABAT</p>
+                <p>NIP. 19700101 199503 1 001</p>
+            </div>
         </div>
         
-        {/* Decorative Bottom Bar (NAVY) */}
-        <div className="h-3 bg-blue-900 w-full print:hidden"></div>
+        <div className="mt-12 pt-2 border-t border-gray-400 text-[8px] text-gray-500 flex justify-between">
+            <span>Dicetak melalui Sistem Informasi Cuti (SICUTI)</span>
+            <span>ID Dokumen: {leave.id}</span>
+        </div>
       </div>
-      
-      {/* Copyright Footer */}
+
       <div className="fixed bottom-4 text-center w-full text-xs text-gray-400 print:hidden pointer-events-none">
         &copy; {new Date().getFullYear()} Sistem Informasi Kepegawaian
       </div>
-
     </div>
   )
 }
