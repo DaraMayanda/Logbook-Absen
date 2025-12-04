@@ -89,7 +89,8 @@ export default function LeavePublicPage() {
 
   // QR value publik
   const domain = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin
-  const qrValue = `${domain}/leave/public/${leave.id}`
+  const qrValue = `${domain}/leave/${leave.id}`
+
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 py-10 print:bg-white">
