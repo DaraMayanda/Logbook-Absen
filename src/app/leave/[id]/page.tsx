@@ -267,7 +267,6 @@ export default function LeavePublicPage() {
 
         {/* Footer Minimalis (Tanpa Tanda Tangan, hanya info sistem) */}
         <div className="mt-20 pt-4 border-t border-gray-400 text-[9px] text-gray-500 flex justify-between italic">
-            <span>Dicetak melalui Sistem Informasi Cuti (SICUTI) KPPN Lhokseumawe</span>
             <span>ID: {leave.id} • Tgl Cetak: {new Date().toLocaleString('id-ID')}</span>
         </div>
       </div>
