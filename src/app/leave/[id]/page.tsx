@@ -118,7 +118,6 @@ export default function LeavePublicPage() {
   // QR value publik
   const domain = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin
   const qrValue = `${domain}/leave/${leave.id}`
-  const todayDate = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
   const duration = calculateDuration(leave.start_date, leave.end_date)
 
   return (
@@ -126,7 +125,7 @@ export default function LeavePublicPage() {
       
       {/* ===================================================================================
           TAMPILAN WEB (MODERN NAVY) - DIAKSES DI LAYAR (HP/LAPTOP)
-          Class `print:hidden` akan menyembunyikan bagian ini saat dicetak.
+          (Bagian ini tidak berubah, tetap cantik di layar)
          =================================================================================== */}
       <div className="bg-white w-full max-w-3xl rounded-2xl shadow-xl overflow-hidden border border-gray-200 print:hidden">
         
@@ -202,45 +201,38 @@ export default function LeavePublicPage() {
       </div>
 
       {/* ===================================================================================
-          TAMPILAN CETAK/PRINT (SURAT RESMI BIASA) - HANYA MUNCUL SAAT DI-PRINT
-          Class `hidden print:block` artinya sembunyi di layar, tapi muncul saat diprint.
+          TAMPILAN CETAK/PRINT (SIMPEL & CLEAN) - TANPA KOP, TANPA LOGO, TANPA TTD
          =================================================================================== */}
-      <div className="hidden print:block bg-white w-full max-w-[210mm] p-10 font-serif text-black leading-relaxed">
+      <div className="hidden print:block bg-white w-full max-w-[210mm] p-12 font-serif text-black leading-relaxed">
         
-        {/* Kop Surat */}
-        <div className="flex items-start justify-center border-b-4 border-double border-black pb-4 mb-6 gap-4">
-            <img 
-                src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Logo_of_the_Ministry_of_Finance_of_the_Republic_of_Indonesia.svg/1200px-Logo_of_the_Ministry_of_Finance_of_the_Republic_of_Indonesia.svg.png" 
-                alt="Logo" className="w-24 h-auto object-contain"
-            />
-            <div className="text-center flex-1">
-                <h2 className="text-lg font-bold uppercase tracking-wide">Kementerian Keuangan Republik Indonesia</h2>
-                <h3 className="text-base font-bold uppercase tracking-wide">Direktorat Jenderal Perbendaharaan</h3>
-                <h4 className="text-sm font-bold uppercase">Kantor Pelayanan Perbendaharaan Negara</h4>
-                <p className="text-[10px] font-normal mt-1">
-                    Gedung Keuangan Negara, Jalan Diponegoro Nomor 123, Banda Aceh<br/>
-                    Telepon: (0651) 123456; Faksimile: (0651) 123456; Laman: www.djpb.kemenkeu.go.id
-                </p>
-            </div>
-        </div>
-
-        {/* Judul */}
-        <div className="text-center mb-8">
-            <h1 className="text-xl font-bold underline decoration-1 underline-offset-4 uppercase">SURAT IZIN CUTI</h1>
-            <p className="text-sm mt-1">Nomor: CUTI-{leave.id}/KPPN/2025</p>
+        {/* Langsung Judul */}
+        <div className="text-center mb-10 mt-4">
+            <h1 className="text-2xl font-bold underline decoration-2 underline-offset-4 uppercase tracking-wider">SURAT IZIN CUTI</h1>
         </div>
 
         {/* Isi Surat */}
-        <div className="text-justify text-[11pt]">
-            <p className="mb-4">
-                Pejabat yang berwenang memberikan cuti, dengan ini memberikan izin cuti kepada Pegawai Negeri Sipil / Pegawai Pemerintah di bawah ini:
+        <div className="text-justify text-[12pt]">
+            <p className="mb-6">
+                Diberikan izin cuti kepada:
             </p>
 
-            <table className="w-full mb-6 ml-4">
+            <table className="w-full mb-8 ml-2">
                 <tbody>
-                    <tr><td className="w-40 py-1 align-top">Nama</td><td className="w-4 py-1 align-top">:</td><td className="font-bold uppercase align-top">{leave.profiles?.full_name}</td></tr>
-                    <tr><td className="py-1 align-top">Jabatan</td><td className="py-1 align-top">:</td><td className="align-top">{leave.profiles?.position}</td></tr>
-                    <tr><td className="py-1 align-top">Unit Kerja</td><td className="py-1 align-top">:</td><td className="align-top">KPPN Percontohan</td></tr>
+                    <tr>
+                        <td className="w-40 py-1 align-top">Nama</td>
+                        <td className="w-4 py-1 align-top">:</td>
+                        <td className="font-bold uppercase align-top">{leave.profiles?.full_name}</td>
+                    </tr>
+                    <tr>
+                        <td className="py-1 align-top">Jabatan</td>
+                        <td className="py-1 align-top">:</td>
+                        <td className="align-top">{leave.profiles?.position}</td>
+                    </tr>
+                    <tr>
+                        <td className="py-1 align-top">Unit Kerja</td>
+                        <td className="py-1 align-top">:</td>
+                        <td className="align-top font-bold">KPPN Lhokseumawe</td>
+                    </tr>
                 </tbody>
             </table>
 
@@ -248,63 +240,38 @@ export default function LeavePublicPage() {
                 Untuk melaksanakan <span className="font-bold">{leave.leave_type}</span> dengan rincian sebagai berikut:
             </p>
 
-            {/* Tabel Detail Polos (Tanpa Icon) */}
-            <div className="border border-black mb-6 w-[95%] mx-auto">
-                <div className="grid grid-cols-[160px_1fr] border-b border-black">
-                    <div className="p-2 border-r border-black font-bold">Lama Cuti</div>
-                    <div className="p-2">{duration} (Hari Kerja)</div>
+            {/* Tabel Detail Simple Border */}
+            <div className="border border-black mb-8 w-full">
+                <div className="grid grid-cols-[180px_1fr] border-b border-black">
+                    <div className="p-3 border-r border-black font-bold">Lama Cuti</div>
+                    <div className="p-3">{duration} Hari</div>
                 </div>
-                <div className="grid grid-cols-[160px_1fr] border-b border-black">
-                    <div className="p-2 border-r border-black font-bold">Tanggal Mulai</div>
-                    <div className="p-2">{formatDate(leave.start_date)}</div>
+                <div className="grid grid-cols-[180px_1fr] border-b border-black">
+                    <div className="p-3 border-r border-black font-bold">Tanggal Mulai</div>
+                    <div className="p-3">{formatDate(leave.start_date)}</div>
                 </div>
-                <div className="grid grid-cols-[160px_1fr] border-b border-black">
-                    <div className="p-2 border-r border-black font-bold">Tanggal Selesai</div>
-                    <div className="p-2">{formatDate(leave.end_date)}</div>
+                <div className="grid grid-cols-[180px_1fr] border-b border-black">
+                    <div className="p-3 border-r border-black font-bold">Tanggal Selesai</div>
+                    <div className="p-3">{formatDate(leave.end_date)}</div>
                 </div>
-                <div className="grid grid-cols-[160px_1fr]">
-                    <div className="p-2 border-r border-black font-bold">Alasan</div>
-                    <div className="p-2 italic">{leave.reason}</div>
+                <div className="grid grid-cols-[180px_1fr]">
+                    <div className="p-3 border-r border-black font-bold">Alasan</div>
+                    <div className="p-3 italic">{leave.reason}</div>
                 </div>
             </div>
 
-            <p className="mb-2">Selama menjalankan cuti, alamat yang dapat dihubungi adalah:</p>
-            <p className="ml-4 mb-8 italic text-sm border-b border-dotted border-black inline-block min-w-[50%]">(Sesuai data kepegawaian)</p>
-
-            <p className="mb-8">Demikian surat izin cuti ini dibuat untuk dipergunakan sebagaimana mestinya.</p>
+            <p className="mb-8">
+                Demikian surat izin cuti ini dibuat untuk dipergunakan sebagaimana mestinya.
+            </p>
         </div>
 
-        {/* Tanda Tangan */}
-        <div className="flex justify-end mt-4 mr-4">
-            <div className="w-72 text-center">
-                <p className="mb-1">Ditetapkan di Banda Aceh</p>
-                <p className="mb-4">Pada tanggal {todayDate}</p>
-                
-                <p className="font-bold uppercase mb-2">Kepala Kantor,</p>
-                <p className="text-xs mb-4">(Kuasa Pengguna Anggaran)</p>
-                
-                {/* QR Code di Print: Hitam Putih polos */}
-                <div className="flex justify-center my-4">
-                     <div className="border border-gray-300 p-1">
-                        <QRCodeCanvas value={qrValue} size={90} level="H" />
-                     </div>
-                </div>
-                
-                <p className="text-[9px] text-gray-500 mb-2 italic">Ditandatangani secara elektronik</p>
-                <p className="font-bold underline uppercase">NAMA PEJABAT</p>
-                <p>NIP. 19700101 199503 1 001</p>
-            </div>
-        </div>
-        
-        <div className="mt-12 pt-2 border-t border-gray-400 text-[8px] text-gray-500 flex justify-between">
-            <span>Dicetak melalui Sistem Informasi Cuti (SICUTI)</span>
-            <span>ID Dokumen: {leave.id}</span>
+        {/* Footer Minimalis (Tanpa Tanda Tangan, hanya info sistem) */}
+        <div className="mt-20 pt-4 border-t border-gray-400 text-[9px] text-gray-500 flex justify-between italic">
+            <span>Dicetak melalui Sistem Informasi Cuti (SICUTI) KPPN Lhokseumawe</span>
+            <span>ID: {leave.id} • Tgl Cetak: {new Date().toLocaleString('id-ID')}</span>
         </div>
       </div>
 
-      <div className="fixed bottom-4 text-center w-full text-xs text-gray-400 print:hidden pointer-events-none">
-        &copy; {new Date().getFullYear()} Sistem Informasi Kepegawaian
-      </div>
     </div>
   )
 }
