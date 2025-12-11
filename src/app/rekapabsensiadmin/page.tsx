@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Button } from '@/components/ui/button'
-import { Loader2, ArrowLeft, FileSpreadsheet, Search, Filter, Info } from 'lucide-react' // Added Info icon
+import { Loader2, ArrowLeft, FileSpreadsheet, Search, Filter, Info, Briefcase } from 'lucide-react' 
 import toast, { Toaster } from 'react-hot-toast'
 import XLSX from 'xlsx-js-style' 
 import { 
@@ -38,15 +38,23 @@ type AttendanceInfo = {
   checkIn: string
 }
 
+// Tipe untuk data Quota dari DB
+type LeaveQuota = {
+  user_id: string
+  annual_quota: number
+  used_leave: number
+}
+
 type MatrixRow = {
   no: number
   profile: Profile
+  remainingLeave: number | null // Field baru untuk sisa cuti
   days: {
     date: string
     code: 'H' | '2x' | 'T' | '2T¹' | '2T²' | 'I' | 'C' | 'S' | 'A' | '½' | '-' 
     color: string
     isHoliday: boolean
-    tooltip: string // Added tooltip field
+    tooltip: string
   }[]
   stats: {
     H: number       
@@ -74,6 +82,9 @@ export default function RekapAbsensiMatrix() {
   const [attendanceMap, setAttendanceMap] = useState<Map<string, AttendanceInfo[]>>(new Map())
   const [leaveMap, setLeaveMap] = useState<Map<string, LeaveInfo>>(new Map())
   const [permissionSet, setPermissionSet] = useState<Set<string>>(new Set())
+  
+  // State untuk Sisa Cuti
+  const [quotaMap, setQuotaMap] = useState<Map<string, number>>(new Map())
 
   // =========================================================================
   // 1. FETCH DATA
@@ -84,6 +95,7 @@ export default function RekapAbsensiMatrix() {
       const startDateStr = format(startOfMonth(new Date(year, month)), 'yyyy-MM-dd')
       const endDateStr = format(endOfMonth(new Date(year, month)), 'yyyy-MM-dd')
 
+      // 1. Fetch Profiles
       const { data: dataProfiles, error: errProf } = await supabase
         .from('profiles')
         .select('id, full_name, position')
@@ -93,25 +105,36 @@ export default function RekapAbsensiMatrix() {
       
       if (errProf) throw errProf
 
+      // 2. Fetch Attendance
       const { data: dataAtt } = await supabase
         .from('attendances')
         .select('user_id, attendance_date, shift, check_in') 
         .gte('attendance_date', startDateStr)
         .lte('attendance_date', endDateStr)
 
+      // 3. Fetch Leave Requests (History Cuti bulan ini untuk matriks)
       const { data: dataLeaves } = await supabase
         .from('leave_requests')
         .select('user_id, start_date, end_date, leave_type, status, half_day')
         .eq('status', 'Disetujui')
         .or(`start_date.lte.${endDateStr},end_date.gte.${startDateStr}`)
 
+      // 4. Fetch Permissions
       const { data: dataPermits } = await supabase
         .from('permission_requests')
         .select('user_id, tanggal_mulai, tanggal_selesai, status')
         .in('status', ['Disetujui', 'Disetujui Level 1', 'Disetujui Level 2'])
         .or(`tanggal_mulai.lte.${endDateStr},tanggal_selesai.gte.${startDateStr}`)
 
-      // PROCESS DATA
+      // 5. FETCH QUOTA CUTI (Logic Baru)
+      // Ambil data quota untuk tahun yang dipilih
+      const { data: dataQuota, error: errQuota } = await supabase
+        .from('master_leave_quota')
+        .select('user_id, annual_quota, used_leave')
+        .eq('year', year)
+
+      // --- PROCESS DATA ---
+      
       const tempAttMap = new Map<string, AttendanceInfo[]>()
       dataAtt?.forEach(a => {
         const key = `${a.user_id}_${a.attendance_date}`
@@ -147,6 +170,15 @@ export default function RekapAbsensiMatrix() {
       })
       setPermissionSet(tempPermitSet)
 
+      // Process Quota Map
+      const tempQuotaMap = new Map<string, number>()
+      dataQuota?.forEach((q: LeaveQuota) => {
+          // Logic: Sisa = Jatah Tahunan - Yang Terpakai
+          const sisa = Number(q.annual_quota) - Number(q.used_leave)
+          tempQuotaMap.set(q.user_id, sisa)
+      })
+      setQuotaMap(tempQuotaMap)
+
       if (dataProfiles) setProfiles(dataProfiles)
 
     } catch (error: any) {
@@ -180,6 +212,9 @@ export default function RekapAbsensiMatrix() {
     return filteredProfiles.map((profile, index) => {
       const rowData: MatrixRow['days'] = []
       let stats = { H: 0, Sft: 0, T: 0, I: 0, C: 0, S: 0, A: 0, Half: 0 }
+
+      // Ambil sisa cuti dari map
+      const remainingLeave = quotaMap.has(profile.id) ? quotaMap.get(profile.id)! : null
 
       daysArray.forEach(day => {
         const dateObj = new Date(year, month, day)
@@ -273,12 +308,12 @@ export default function RekapAbsensiMatrix() {
         rowData.push({ date: dateStr, code, color, isHoliday: isWeekend, tooltip })
       })
 
-      return { no: index + 1, profile, days: rowData, stats }
+      return { no: index + 1, profile, days: rowData, stats, remainingLeave }
     })
-  }, [profiles, attendanceMap, leaveMap, permissionSet, month, year, searchName])
+  }, [profiles, attendanceMap, leaveMap, permissionSet, quotaMap, month, year, searchName])
 
   // =========================================================================
-  // 3. EXPORT TO EXCEL WITH STYLING (UPDATED)
+  // 3. EXPORT TO EXCEL WITH STYLING
   // =========================================================================
   const exportToExcel = () => {
     if (matrixData.length === 0) {
@@ -315,6 +350,14 @@ export default function RekapAbsensiMatrix() {
       border: borderStyle
     }
 
+    // Style Header Sisa Cuti
+    const headerSisaStyle = {
+        fill: { fgColor: { rgb: "1E40AF" } }, // Blue-800
+        font: { color: { rgb: "FFFFFF" }, bold: true },
+        alignment: { horizontal: "center", vertical: "center" },
+        border: borderStyle
+    }
+
     const styles: Record<string, any> = {
       'H': { fill: { fgColor: { rgb: "C6EFCE" } }, font: { color: { rgb: "006100" }, bold: true } },
       '2x': { fill: { fgColor: { rgb: "16A34A" } }, font: { color: { rgb: "FFFFFF" }, bold: true } },
@@ -332,9 +375,13 @@ export default function RekapAbsensiMatrix() {
     // --- B. BUILD TABLE HEADER ---
     const tableHeaderLabel = [
       "No", "Nama Pegawai", "Jabatan", ...daysHeader, 
-      "Total Hari (H)", "Total Shift", "Telat", "Izin", "Cuti", "Sakit", "½ Hari", "Alpha"
+      "Total Hari (H)", "Total Shift", "Telat", "Izin", "Cuti", "Sakit", "½ Hari", "Alpha",
+      "Sisa Cuti" // Header Baru
     ]
-    const tableHeaderRow = tableHeaderLabel.map(h => ({ v: h, s: headerStyle }))
+    const tableHeaderRow = tableHeaderLabel.map((h, idx) => {
+        const s = idx === tableHeaderLabel.length - 1 ? headerSisaStyle : headerStyle
+        return { v: h, s }
+    })
 
     // --- C. BUILD TABLE BODY ---
     const tableBodyRows: any[][] = []
@@ -369,6 +416,17 @@ export default function RekapAbsensiMatrix() {
       rowCells.push({ v: row.stats.S, s: { ...statStyle, fill: { fgColor: { rgb: "FFEDD5" } } } })
       rowCells.push({ v: row.stats.Half, s: { ...statStyle, fill: { fgColor: { rgb: "F3E8FF" } } } })
       rowCells.push({ v: row.stats.A, s: { ...statStyle, fill: { fgColor: { rgb: "FEE2E2" } }, font: { color: { rgb: "DC2626" }, bold: true } } })
+
+      // Value Sisa Cuti
+      const sisaVal = row.remainingLeave !== null ? row.remainingLeave : "-"
+      rowCells.push({ 
+          v: sisaVal, 
+          s: { 
+              ...statStyle, 
+              fill: { fgColor: { rgb: "DBEAFE" } }, 
+              font: { bold: true, color: { rgb: "1E3A8A" } } 
+          } 
+      })
 
       tableBodyRows.push(rowCells)
     })
@@ -438,6 +496,7 @@ export default function RekapAbsensiMatrix() {
     const wscols = [{ wch: 5 }, { wch: 30 }, { wch: 20 }] // No, Nama, Jabatan
     for(let i=0; i<daysCount; i++) wscols.push({ wch: 4 }) // Tanggal
     for(let i=0; i<8; i++) wscols.push({ wch: 8 }) // Statistik
+    wscols.push({ wch: 12 }) // Lebar untuk Sisa Cuti
     ws['!cols'] = wscols
 
     // --- I. SAVE ---
@@ -499,7 +558,7 @@ export default function RekapAbsensiMatrix() {
             
             <div className="ml-auto text-xs text-gray-500 italic hidden md:flex items-center gap-1">
                 <Info className="w-3 h-3" />
-                <span>Arahkan kursor ke kotak untuk detail</span>
+                <span>Geser ke kanan untuk lihat sisa cuti</span>
             </div>
         </div>
       </div>
@@ -508,7 +567,7 @@ export default function RekapAbsensiMatrix() {
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 bg-white rounded-lg shadow-sm h-64">
             <Loader2 className="animate-spin text-blue-600 w-8 h-8 mb-2"/>
-            <p className="text-gray-500">Memuat data absensi...</p>
+            <p className="text-gray-500">Memuat data absensi & cuti...</p>
         </div>
       ) : matrixData.length === 0 ? (
         <div className="text-center py-20 bg-white rounded-lg shadow-sm text-gray-500">Tidak ada data pegawai.</div>
@@ -522,6 +581,13 @@ export default function RekapAbsensiMatrix() {
                         <th rowSpan={2} className="border border-gray-600 p-2 min-w-[100px]">Jabatan</th>
                         <th colSpan={daysInCurrentMonth} className="border border-gray-600 p-1 bg-gray-700">Tanggal</th>
                         <th colSpan={8} className="border border-gray-600 p-1 bg-blue-900">Total</th>
+                        {/* Header Sisa Cuti */}
+                        <th rowSpan={2} className="border border-gray-600 p-2 min-w-[80px] bg-blue-800">
+                            <div className="flex flex-col items-center gap-1">
+                                <Briefcase className="w-4 h-4"/>
+                                <span>Sisa Cuti</span>
+                            </div>
+                        </th>
                     </tr>
                     <tr className="bg-gray-100 text-gray-800 font-bold">
                         {dateHeaders.map(d => {
@@ -563,6 +629,11 @@ export default function RekapAbsensiMatrix() {
                             <td className="border border-gray-300 font-bold bg-orange-50">{row.stats.S}</td>
                             <td className="border border-gray-300 font-bold bg-purple-50">{row.stats.Half}</td>
                             <td className="border border-gray-300 font-bold bg-red-50 text-red-600">{row.stats.A}</td>
+
+                            {/* Cell Sisa Cuti */}
+                            <td className="border border-gray-300 font-bold bg-blue-50 text-blue-800 text-sm">
+                                {row.remainingLeave !== null ? row.remainingLeave : "-"}
+                            </td>
                         </tr>
                     ))}
                 </tbody>

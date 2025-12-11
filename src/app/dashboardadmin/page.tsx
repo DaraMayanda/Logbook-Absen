@@ -16,7 +16,8 @@ import {
   Info,
   Calendar,
   KeyRound,
-  ChevronRight
+  ChevronRight,
+  Search // <-- Icon baru untuk Detail
 } from 'lucide-react'
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
@@ -24,7 +25,6 @@ import { supabase } from '@/lib/supabaseClient'
 import { Toaster, toast } from 'react-hot-toast'
 
 // --- SUB-COMPONENT: GENERATE KUOTA (MANUAL BACKUP) ---
-// Tetap di sini sebagai tombol teknis untuk Admin
 function GenerateQuotaButton() {
   const [loading, setLoading] = useState(false)
   const [targetYear, setTargetYear] = useState(new Date().getFullYear() + 1)
@@ -134,7 +134,7 @@ export default function DashboardAdmin() {
     </div>
   )
 
-  // Reusable Menu Card (Desain Horizontal List)
+  // Reusable Menu Card
   const MenuCard = ({ icon: Icon, title, description, href, colorClass = "text-blue-700 bg-blue-50" }: any) => (
     <div 
       onClick={() => router.push(href)}
@@ -186,14 +186,26 @@ export default function DashboardAdmin() {
           </div>
         </div>
 
-        {/* Menu Operasional (Memanjang ke bawah) */}
+        {/* Menu Operasional */}
         <div>
           <h2 className="text-lg font-bold mb-4 text-gray-800 pl-1 border-l-4 border-blue-600">Menu Operasional</h2>
           <div className="flex flex-col gap-3">
             <MenuCard icon={FileText} title="Data Pegawai" description="Kelola data seluruh pegawai" href="/datapegawai" />
             <MenuCard icon={Briefcase} title="Approval Cuti" description="Persetujuan pengajuan cuti" href="/approvalcuti" />
             <MenuCard icon={ClipboardCheck} title="Approval Izin" description="Persetujuan pengajuan izin" href="/approvalizin" />
-            <MenuCard icon={BarChart2} title="Rekap Absensi" description="Laporan absensi bulanan (Matrix)" href="/rekapabsensiadmin" />
+            
+            {/* Menu Rekap */}
+            <MenuCard icon={BarChart2} title="Rekap Absensi Matrix" description="Laporan absensi bulanan (Semua)" href="/rekapabsensiadmin" />
+            
+            {/* --- MENU BARU: Detail Absensi Individu --- */}
+            <MenuCard 
+                icon={Search} 
+                title="Detail Absensi Pegawai" 
+                description="Cek riwayat detail, lokasi & jam per orang" 
+                href="/detailabsensipegawai" 
+                // Menggunakan default colorClass (Biru)
+            />
+
             <MenuCard icon={BookOpenCheck} title="Logbook Pegawai" description="Monitoring aktivitas harian" href="/logbookpegawaiadmin" />
           </div>
         </div>
@@ -205,7 +217,7 @@ export default function DashboardAdmin() {
           </h2>
           <div className="flex flex-col gap-4">
             
-            {/* 1. Menu Ganti Password (Link ke Page Baru) */}
+            {/* 1. Menu Ganti Password */}
             <MenuCard 
               icon={KeyRound} 
               title="Ganti Password Akun" 
@@ -214,7 +226,7 @@ export default function DashboardAdmin() {
               colorClass="text-yellow-600 bg-yellow-50"
             />
 
-            {/* 2. Fitur Generate Kuota (Inline Component) */}
+            {/* 2. Fitur Generate Kuota */}
             <GenerateQuotaButton />
             
           </div>
