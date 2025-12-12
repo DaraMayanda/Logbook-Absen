@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabaseClient'
+import { createBrowserClient } from '@supabase/ssr' // <-- GANTI INI: Pakai library SSR biar Cookie terbaca Server
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 
@@ -15,6 +15,12 @@ export default function LoginClient() {
 
   const router = useRouter()
   const searchParams = useSearchParams()
+
+  // --- INISIALISASI SUPABASE KHUSUS BROWSER (COOKIE SUPPORT) ---
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
 
   // Ambil query redirect jika ada
   useEffect(() => {
@@ -37,7 +43,7 @@ export default function LoginClient() {
 
       console.log('[DEBUG] Attempting login with email:', email)
 
-      // Login ke Supabase
+      // 1. Login ke Supabase (Sekarang ini otomatis set COOKIE, bukan cuma LocalStorage)
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
@@ -46,48 +52,61 @@ export default function LoginClient() {
       if (signInError) throw signInError
       if (!data?.session) throw new Error('Pastikan email sudah terverifikasi.')
 
-      console.log('[DEBUG] Login successful, session:', data.session)
-      localStorage.setItem('supabaseSession', JSON.stringify(data.session))
+      console.log('[DEBUG] Login successful. Session created via Cookie.')
+
+      // 2. REFRESH ROUTER (WAJIB UTAMA!)
+      // Ini memberitahu Server Vercel: "Hei, Cookie user ini baru diupdate, tolong baca ulang!"
+      router.refresh()
+      
+      // 3. Jeda waktu agar Cookie "matang" dan tersimpan di browser
+      await new Promise(resolve => setTimeout(resolve, 1000))
 
       const userId = data.user.id
       console.log('[DEBUG] User ID:', userId)
 
-      // Ambil profile dari tabel profiles
+      // 4. Ambil profile dari tabel profiles
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('full_name, role, position, is_admin')
         .eq('id', userId)
         .single()
 
-      if (profileError) throw profileError
+      if (profileError) {
+        // Fallback jika profile belum ada (misal baru register)
+        console.warn('Profile not found, proceeding as standard user')
+      }
+
       console.log('[DEBUG] Profile from DB:', profile)
 
-      // --- LOGIKA ADMIN SUPER KETAT ---
+      // --- LOGIKA ADMIN ---
       const isAdmin =
-        profile.is_admin === true || profile.is_admin === 'true' || profile.role === 'kasubbag' || profile.role === 'kepala_kantor'
+        profile?.is_admin === true || 
+        profile?.is_admin === 'true' || 
+        profile?.role === 'kasubbag' || 
+        profile?.role === 'kepala_kantor' ||
+        profile?.role === 'admin'
 
-      console.log('[DEBUG] isAdmin boolean check:', profile.is_admin)
-      console.log('[DEBUG] isAdmin role check:', profile.role)
-      console.log('[DEBUG] Final isAdmin determination:', isAdmin)
-
+      // 5. Redirect dengan REPLACE (Agar user tidak bisa Back ke login)
       if (isAdmin) {
         console.log('[DEBUG] Redirecting to /dashboardadmin (admin)')
-        router.push('/dashboardadmin')
+        router.replace('/dashboardadmin')
       } else {
         if (redirectTo) {
           console.log('[DEBUG] Redirecting to query redirect:', redirectTo)
-          router.push(redirectTo)
+          router.replace(redirectTo)
         } else {
           console.log('[DEBUG] Redirecting to /dashboard (pegawai biasa)')
-          router.push('/dashboard')
+          router.replace('/dashboard')
         }
       }
     } catch (err: any) {
       console.error('[DEBUG] Login error:', err)
-      setError(err.message || 'Terjadi kesalahan saat login.')
-    } finally {
-      setLoading(false)
-    }
+      setError(err.message === 'Invalid login credentials' 
+        ? 'Email atau password salah.' 
+        : err.message || 'Terjadi kesalahan saat login.')
+      setLoading(false) // Stop loading hanya jika error
+    } 
+    // Jika sukses, biarkan loading tetap true (berputar) sampai halaman benar-benar pindah
   }
 
   const handleForgotPassword = async () => {
@@ -101,7 +120,8 @@ export default function LoginClient() {
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: 'http://localhost:3000/reset-password', // ganti sesuai localhost
+        // Menggunakan window.location.origin agar dinamis (localhost/vercel)
+        redirectTo: `${window.location.origin}/reset-password`, 
       })
       if (error) throw error
       setMessage('Link reset password telah dikirim ke email kamu.')
@@ -112,6 +132,7 @@ export default function LoginClient() {
     }
   }
 
+  // --- TAMPILAN TIDAK BERUBAH SAMA SEKALI ---
   return (
     <div className="flex min-h-screen flex-col bg-gray-100">
       {/* Header */}
