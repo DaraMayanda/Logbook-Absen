@@ -1,85 +1,105 @@
-'use client';
+'use client'
 
-import { useEffect, useState } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { useRouter } from 'next/navigation';
-import { Lock } from 'lucide-react';
+import { useState, useEffect } from 'react'
+import { createBrowserClient } from '@supabase/ssr'
+import { useRouter } from 'next/navigation'
+import { Lock, Eye, EyeOff } from 'lucide-react'
 
 export default function ResetPasswordPage() {
-  const supabase = createClientComponentClient();
-  const router = useRouter();
+  const router = useRouter()
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
 
-  const [password, setPassword] = useState('');
-  const [status, setStatus] = useState('Memuat...');
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
+  const [userReady, setUserReady] = useState(false)
 
+  // Cek apakah user otomatis login dari link reset password
   useEffect(() => {
-    const hash = window.location.hash;
-    if (!hash.includes('access_token')) {
-      setStatus('Link reset password tidak valid atau sudah kadaluarsa.');
-      return;
+    const checkUser = async () => {
+      const { data: { user }, error } = await supabase.auth.getUser()
+      if (error || !user) {
+        setError('Link reset password tidak valid atau sudah kadaluarsa.')
+      } else {
+        setUserReady(true)
+      }
     }
 
-    const params = new URLSearchParams(hash.replace('#', ''));
-    const access_token = params.get('access_token');
+    checkUser()
+  }, [])
 
-    if (access_token) {
-      supabase.auth.setSession({
-        access_token,
-        refresh_token: params.get('refresh_token') || '',
-      });
-      setStatus('Silakan masukkan kata sandi baru.');
-    }
-  }, [supabase]);
+  const handleReset = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!userReady) return
 
-  const handleResetPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const { error } = await supabase.auth.updateUser({ password });
-    if (error) {
-      setStatus('Gagal memperbarui kata sandi: ' + error.message);
-    } else {
-      setStatus('✅ Kata sandi berhasil diperbarui! Mengarahkan ke halaman login...');
-      setTimeout(() => router.push('/login'), 2000);
+    setLoading(true)
+    setError(null)
+    setMessage(null)
+
+    try {
+      const { error } = await supabase.auth.updateUser({ password })
+      if (error) throw error
+
+      setMessage('Password berhasil diperbarui! Mengalihkan ke login...')
+      setTimeout(() => router.replace('/login'), 2000)
+    } catch (err: any) {
+      setError(err.message || 'Gagal mengubah password.')
+    } finally {
+      setLoading(false)
     }
-  };
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-blue-100 relative overflow-hidden">
-      {/* Elemen dekorasi */}
-      <div className="absolute top-0 left-0 w-96 h-96 bg-blue-200 rounded-full blur-3xl opacity-30 animate-pulse"></div>
-      <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-300 rounded-full blur-3xl opacity-20 animate-pulse"></div>
-
-      <div className="relative bg-white/80 backdrop-blur-xl p-8 rounded-2xl shadow-xl w-96 border border-blue-100">
-        <div className="flex flex-col items-center">
-          <div className="bg-blue-600 p-3 rounded-full mb-4">
-            <Lock className="text-white w-6 h-6" />
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 font-sans">
+      <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg border border-gray-100">
+        <div className="flex flex-col items-center mb-6">
+          <div className="bg-blue-100 p-3 rounded-full mb-3">
+            <Lock className="text-[#003366] w-6 h-6" />
           </div>
-          <h2 className="text-2xl font-semibold text-blue-800 mb-2">Reset Password</h2>
-          <p className="text-gray-600 text-center mb-4 text-sm">
-            {status.includes('Silakan')
-              ? 'Masukkan password baru untuk akun Anda'
-              : status}
+          <h2 className="text-2xl font-bold text-[#003366]">Reset Password</h2>
+          <p className="text-gray-500 text-sm mt-1">
+            Masukkan password baru untuk akun Anda
           </p>
         </div>
 
-        {status.includes('Silakan') && (
-          <form onSubmit={handleResetPassword} className="space-y-4">
+        {message && <div className="bg-green-50 text-green-700 p-3 rounded-lg mb-4 text-sm text-center font-medium">{message}</div>}
+        {error && <div className="bg-red-50 text-red-700 p-3 rounded-lg mb-4 text-sm text-center font-medium">{error}</div>}
+
+        <form onSubmit={handleReset} className="space-y-5">
+          <div className="relative">
             <input
-              type="password"
-              placeholder="Password baru"
+              type={showPassword ? 'text' : 'password'}
+              placeholder="Password Baru"
+              className="w-full p-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full p-3 border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
+              minLength={6}
+              disabled={!userReady || loading}
             />
             <button
-              type="submit"
-              className="w-full bg-blue-700 text-white py-2 rounded-lg hover:bg-blue-800 transition-all duration-200"
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600"
             >
-              Perbarui Password
+              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
-          </form>
-        )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={!userReady || loading}
+            className="w-full bg-[#003366] text-white py-3 rounded-lg font-bold hover:bg-blue-800 transition disabled:bg-gray-400 shadow-md hover:shadow-lg transform active:scale-95 duration-200"
+          >
+            {loading ? 'Menyimpan...' : 'Perbarui Password'}
+          </button>
+        </form>
       </div>
     </div>
-  );
+  )
 }
