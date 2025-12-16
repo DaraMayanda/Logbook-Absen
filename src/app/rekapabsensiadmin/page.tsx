@@ -21,6 +21,65 @@ import {
 } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
 
+// --- DATA HARI LIBUR NASIONAL & CUTI BERSAMA INDONESIA (2024 - 2026) ---
+// Sumber 2025: Data Resmi SKB 3 Menteri
+const PUBLIC_HOLIDAYS: Record<string, string> = {
+  // --- 2024 (Sisa Akhir Tahun) ---
+  '2024-12-25': 'Hari Raya Natal',
+  '2024-12-26': 'Cuti Bersama Natal',
+
+  // --- 2025 (LIBUR NASIONAL) ---
+  '2025-01-01': 'Tahun Baru 2025 Masehi',
+  '2025-01-27': 'Isra Mikraj Nabi Muhammad SAW',
+  '2025-01-29': 'Tahun Baru Imlek 2576 Kongzili',
+  '2025-03-29': 'Hari Suci Nyepi Tahun Baru Saka 1947',
+  '2025-03-31': 'Hari Raya Idul Fitri 1446 Hijriyah',
+  '2025-04-01': 'Hari Raya Idul Fitri 1446 Hijriyah',
+  '2025-04-18': 'Wafat Yesus Kristus',
+  '2025-04-20': 'Kebangkitan Yesus Kristus (Paskah)',
+  '2025-05-01': 'Hari Buruh Internasional',
+  '2025-05-12': 'Hari Raya Waisak 2569 BE',
+  '2025-05-29': 'Kenaikan Yesus Kristus',
+  '2025-06-01': 'Hari Lahir Pancasila',
+  '2025-06-06': 'Hari Raya Idul Adha 1446 Hijriyah',
+  '2025-06-27': 'Tahun Baru Islam 1447 Hijriyah',
+  '2025-08-17': 'Hari Kemerdekaan Republik Indonesia',
+  '2025-09-05': 'Maulid Nabi Muhammad SAW',
+  '2025-12-25': 'Hari Raya Natal',
+
+  // --- 2025 (CUTI BERSAMA) ---
+  '2025-01-28': 'Cuti Bersama Tahun Baru Imlek',
+  '2025-03-28': 'Cuti Bersama Hari Suci Nyepi',
+  '2025-04-02': 'Cuti Bersama Idul Fitri 1446H',
+  '2025-04-03': 'Cuti Bersama Idul Fitri 1446H',
+  '2025-04-04': 'Cuti Bersama Idul Fitri 1446H',
+  '2025-04-07': 'Cuti Bersama Idul Fitri 1446H',
+  '2025-05-13': 'Cuti Bersama Waisak',
+  '2025-05-30': 'Cuti Bersama Kenaikan Yesus Kristus',
+  '2025-06-09': 'Cuti Bersama Idul Adha 1446H',
+  // '2025-08-18': 'Cuti Bersama Kemerdekaan RI', // (Opsional jika ada kebijakan khusus)
+  '2025-12-26': 'Cuti Bersama Hari Raya Natal',
+
+  // --- 2026 (Estimasi Kasar - Untuk Jaga-jaga) ---
+  '2026-01-01': 'Tahun Baru 2026 Masehi',
+  '2026-02-16': 'Isra Mikraj Nabi Muhammad SAW (Estimasi)',
+  '2026-02-17': 'Tahun Baru Imlek 2577 Kongzili (Estimasi)',
+  '2026-03-19': 'Hari Suci Nyepi Tahun Baru Saka 1948 (Estimasi)',
+  '2026-03-20': 'Idul Fitri 1447 Hijriah (Estimasi)',
+  '2026-03-21': 'Idul Fitri 1447 Hijriah (Estimasi)',
+  '2026-04-03': 'Wafat Yesus Kristus',
+  '2026-04-05': 'Kebangkitan Yesus Kristus (Paskah)',
+  '2026-05-01': 'Hari Buruh Internasional',
+  '2026-05-14': 'Kenaikan Yesus Kristus',
+  '2026-05-27': 'Idul Adha 1447 Hijriah (Estimasi)',
+  '2026-05-31': 'Hari Raya Waisak 2570 BE (Estimasi)',
+  '2026-06-01': 'Hari Lahir Pancasila',
+  '2026-06-16': 'Tahun Baru Islam 1448 Hijriah (Estimasi)',
+  '2026-08-17': 'Hari Kemerdekaan RI',
+  '2026-08-25': 'Maulid Nabi Muhammad SAW (Estimasi)',
+  '2026-12-25': 'Hari Raya Natal',
+}
+
 // --- Tipe Data ---
 type Profile = {
   id: string
@@ -38,7 +97,6 @@ type AttendanceInfo = {
   checkIn: string
 }
 
-// Tipe untuk data Quota dari DB
 type LeaveQuota = {
   user_id: string
   annual_quota: number
@@ -48,10 +106,10 @@ type LeaveQuota = {
 type MatrixRow = {
   no: number
   profile: Profile
-  remainingLeave: number | null // Field baru untuk sisa cuti
+  remainingLeave: number | null
   days: {
     date: string
-    code: 'H' | '2x' | 'T' | '2T¹' | '2T²' | 'I' | 'C' | 'S' | 'A' | '½' | '-' 
+    code: 'H' | '2x' | 'T' | '2T¹' | '2T²' | 'I' | 'C' | 'S' | 'A' | '½' | 'L' | '-' 
     color: string
     isHoliday: boolean
     tooltip: string
@@ -82,8 +140,6 @@ export default function RekapAbsensiMatrix() {
   const [attendanceMap, setAttendanceMap] = useState<Map<string, AttendanceInfo[]>>(new Map())
   const [leaveMap, setLeaveMap] = useState<Map<string, LeaveInfo>>(new Map())
   const [permissionSet, setPermissionSet] = useState<Set<string>>(new Set())
-  
-  // State untuk Sisa Cuti
   const [quotaMap, setQuotaMap] = useState<Map<string, number>>(new Map())
 
   // =========================================================================
@@ -112,7 +168,7 @@ export default function RekapAbsensiMatrix() {
         .gte('attendance_date', startDateStr)
         .lte('attendance_date', endDateStr)
 
-      // 3. Fetch Leave Requests (History Cuti bulan ini untuk matriks)
+      // 3. Fetch Leave Requests
       const { data: dataLeaves } = await supabase
         .from('leave_requests')
         .select('user_id, start_date, end_date, leave_type, status, half_day')
@@ -126,15 +182,13 @@ export default function RekapAbsensiMatrix() {
         .in('status', ['Disetujui', 'Disetujui Level 1', 'Disetujui Level 2'])
         .or(`tanggal_mulai.lte.${endDateStr},tanggal_selesai.gte.${startDateStr}`)
 
-      // 5. FETCH QUOTA CUTI (Logic Baru)
-      // Ambil data quota untuk tahun yang dipilih
-      const { data: dataQuota, error: errQuota } = await supabase
+      // 5. Fetch Quota
+      const { data: dataQuota } = await supabase
         .from('master_leave_quota')
         .select('user_id, annual_quota, used_leave')
         .eq('year', year)
 
       // --- PROCESS DATA ---
-      
       const tempAttMap = new Map<string, AttendanceInfo[]>()
       dataAtt?.forEach(a => {
         const key = `${a.user_id}_${a.attendance_date}`
@@ -170,10 +224,8 @@ export default function RekapAbsensiMatrix() {
       })
       setPermissionSet(tempPermitSet)
 
-      // Process Quota Map
       const tempQuotaMap = new Map<string, number>()
       dataQuota?.forEach((q: LeaveQuota) => {
-          // Logic: Sisa = Jatah Tahunan - Yang Terpakai
           const sisa = Number(q.annual_quota) - Number(q.used_leave)
           tempQuotaMap.set(q.user_id, sisa)
       })
@@ -194,7 +246,7 @@ export default function RekapAbsensiMatrix() {
   }, [month, year])
 
   // =========================================================================
-  // 2. CORE LOGIC
+  // 2. CORE LOGIC (DENGAN TANGGAL MERAH PRIORITAS UTAMA)
   // =========================================================================
   const matrixData = useMemo(() => {
     let filteredProfiles = profiles
@@ -212,21 +264,40 @@ export default function RekapAbsensiMatrix() {
     return filteredProfiles.map((profile, index) => {
       const rowData: MatrixRow['days'] = []
       let stats = { H: 0, Sft: 0, T: 0, I: 0, C: 0, S: 0, A: 0, Half: 0 }
-
-      // Ambil sisa cuti dari map
       const remainingLeave = quotaMap.has(profile.id) ? quotaMap.get(profile.id)! : null
 
       daysArray.forEach(day => {
         const dateObj = new Date(year, month, day)
         const dateStr = format(dateObj, 'yyyy-MM-dd')
         const key = `${profile.id}_${dateStr}`
+        
+        // LOGIC PENENTUAN HARI LIBUR / WEEKEND
+        const holidayName = PUBLIC_HOLIDAYS[dateStr] 
         const isWeekend = isSunday(dateObj) || isSaturday(dateObj)
+        const isOffDay = isWeekend || !!holidayName 
         
         let code: MatrixRow['days'][0]['code'] = '-'
         let color = 'bg-white'
         let tooltip = ''
 
-        if (attendanceMap.has(key)) {
+        // --- URUTAN LOGIKA BARU (LIBUR MENANG DULUAN) ---
+        
+        // 1. PRIORITAS UTAMA: TANGGAL MERAH / CUTI BERSAMA
+        // Jika tanggal merah, TAMPILKAN 'L' (Libur), abaikan absensi dummy atau cuti di tanggal ini
+        if (holidayName) {
+            code = 'L';
+            color = 'bg-red-600 text-white font-bold'; 
+            tooltip = `LIBUR NASIONAL: ${holidayName}`;
+        }
+        // 2. PRIORITAS KEDUA: WEEKEND (SABTU MINGGU)
+        // Jika weekend, TAMPILKAN '-' (Merah Polos), abaikan absensi dummy
+        else if (isWeekend) { 
+            code = '-'; 
+            color = 'bg-red-500 text-white'; 
+            tooltip = 'Akhir Pekan (Sabtu/Minggu)';
+        }
+        // 3. BARU CEK KEHADIRAN (Hanya di hari kerja)
+        else if (attendanceMap.has(key)) {
             const shifts = attendanceMap.get(key) || []
             let lateCount = 0 
             shifts.forEach(s => {
@@ -237,75 +308,35 @@ export default function RekapAbsensiMatrix() {
             })
 
             if (shifts.length > 1) {
-                if (lateCount === 1) { 
-                    code = '2T¹'; 
-                    color = 'bg-yellow-600 text-white font-bold'; 
-                    tooltip = 'Hadir 2 Shift (Salah satu terlambat)';
-                } else if (lateCount >= 2) { 
-                    code = '2T²'; 
-                    color = 'bg-yellow-700 text-white font-bold'; 
-                    tooltip = 'Hadir 2 Shift (Keduanya terlambat)';
-                } else { 
-                    code = '2x'; 
-                    color = 'bg-green-600 text-white font-bold'; 
-                    tooltip = 'Hadir 2 Shift (Tepat Waktu)';
-                }
+                if (lateCount === 1) { code = '2T¹'; color = 'bg-yellow-600 text-white font-bold'; tooltip = 'Hadir 2 Shift (1 Telat)'; }
+                else if (lateCount >= 2) { code = '2T²'; color = 'bg-yellow-700 text-white font-bold'; tooltip = 'Hadir 2 Shift (2 Telat)'; }
+                else { code = '2x'; color = 'bg-green-600 text-white font-bold'; tooltip = 'Hadir 2 Shift'; }
             } else {
-                if (lateCount > 0) { 
-                    code = 'T'; 
-                    color = 'bg-yellow-500 text-white font-bold'; 
-                    tooltip = 'Hadir 1 Shift (Terlambat)';
-                } else { 
-                    code = 'H'; 
-                    color = 'bg-green-200 text-green-800 border-green-300'; 
-                    tooltip = 'Hadir 1 Shift (Tepat Waktu)';
-                }
+                if (lateCount > 0) { code = 'T'; color = 'bg-yellow-500 text-white font-bold'; tooltip = 'Hadir (Terlambat)'; }
+                else { code = 'H'; color = 'bg-green-200 text-green-800 border-green-300'; tooltip = 'Hadir Tepat Waktu'; }
             }
             stats.H += 1; stats.Sft += shifts.length; stats.T += lateCount;
         }
+        // 4. CUTI (Hanya muncul jika bukan hari libur/weekend)
         else if (leaveMap.has(key)) {
             const info = leaveMap.get(key)!
-            if (info.half_day) { 
-                code = '½'; 
-                color = 'bg-purple-200 text-purple-800'; 
-                tooltip = 'Cuti Setengah Hari';
-                stats.Half++ 
-            } else if (info.type.toLowerCase().includes('sakit')) { 
-                code = 'S'; 
-                color = 'bg-orange-200 text-orange-800'; 
-                tooltip = `Sakit: ${info.type}`;
-                stats.S++ 
-            } else { 
-                code = 'C'; 
-                color = 'bg-blue-200 text-blue-800'; 
-                tooltip = `Cuti: ${info.type}`;
-                stats.C++ 
-            }
+            if (info.half_day) { code = '½'; color = 'bg-purple-200 text-purple-800'; tooltip = 'Cuti Setengah Hari'; stats.Half++ }
+            else if (info.type.toLowerCase().includes('sakit')) { code = 'S'; color = 'bg-orange-200 text-orange-800'; tooltip = `Sakit: ${info.type}`; stats.S++ }
+            else { code = 'C'; color = 'bg-blue-200 text-blue-800'; tooltip = `Cuti: ${info.type}`; stats.C++ }
         }
+        // 5. IZIN
         else if (permissionSet.has(key)) { 
-            code = 'I'; 
-            color = 'bg-yellow-200 text-yellow-800'; 
-            tooltip = 'Izin (Disetujui)';
-            stats.I++ 
+            code = 'I'; color = 'bg-yellow-200 text-yellow-800'; tooltip = 'Izin (Disetujui)'; stats.I++ 
         }
-        else if (isWeekend) { 
-            code = '-'; 
-            color = 'bg-red-500 text-white'; 
-            tooltip = 'Hari Libur / Akhir Pekan';
-        }
+        // 6. ALPHA (Hanya jika hari kerja & sudah lewat)
         else if (isAfter(today, dateObj)) { 
-            code = 'A'; 
-            color = 'bg-red-50 text-red-600 font-bold'; 
-            tooltip = 'Alpha / Tidak Absen';
-            stats.A++ 
+            code = 'A'; color = 'bg-red-50 text-red-600 font-bold'; tooltip = 'Alpha / Tanpa Keterangan'; stats.A++ 
         }
         else { 
-            code = '-'; 
-            color = 'bg-white';
-            tooltip = 'Belum ada data';
+            code = '-'; color = 'bg-white'; tooltip = 'Belum ada data';
         }
 
-        rowData.push({ date: dateStr, code, color, isHoliday: isWeekend, tooltip })
+        rowData.push({ date: dateStr, code, color, isHoliday: isOffDay, tooltip })
       })
 
       return { no: index + 1, profile, days: rowData, stats, remainingLeave }
@@ -313,7 +344,7 @@ export default function RekapAbsensiMatrix() {
   }, [profiles, attendanceMap, leaveMap, permissionSet, quotaMap, month, year, searchName])
 
   // =========================================================================
-  // 3. EXPORT TO EXCEL WITH STYLING
+  // 3. EXPORT TO EXCEL
   // =========================================================================
   const exportToExcel = () => {
     if (matrixData.length === 0) {
@@ -325,7 +356,7 @@ export default function RekapAbsensiMatrix() {
     const daysHeader = Array.from({ length: daysCount }, (_, i) => (i + 1).toString())
     const monthName = format(new Date(year, month), 'MMMM yyyy', { locale: idLocale })
 
-    // --- A. DEFINISI STYLES ---
+    // --- STYLES ---
     const borderStyle = {
       top: { style: "thin", color: { rgb: "000000" } },
       bottom: { style: "thin", color: { rgb: "000000" } },
@@ -333,29 +364,11 @@ export default function RekapAbsensiMatrix() {
       right: { style: "thin", color: { rgb: "000000" } }
     }
 
-    const titleStyle = {
-      font: { sz: 14, bold: true },
-      alignment: { horizontal: "center", vertical: "center" }
-    }
-
-    const periodStyle = {
-      font: { sz: 11, bold: true },
-      alignment: { horizontal: "center", vertical: "center" }
-    }
-
     const headerStyle = {
-      fill: { fgColor: { rgb: "4B5563" } }, // Gray-700
+      fill: { fgColor: { rgb: "4B5563" } },
       font: { color: { rgb: "FFFFFF" }, bold: true },
       alignment: { horizontal: "center", vertical: "center" },
       border: borderStyle
-    }
-
-    // Style Header Sisa Cuti
-    const headerSisaStyle = {
-        fill: { fgColor: { rgb: "1E40AF" } }, // Blue-800
-        font: { color: { rgb: "FFFFFF" }, bold: true },
-        alignment: { horizontal: "center", vertical: "center" },
-        border: borderStyle
     }
 
     const styles: Record<string, any> = {
@@ -369,26 +382,21 @@ export default function RekapAbsensiMatrix() {
       'I': { fill: { fgColor: { rgb: "FEF08A" } }, font: { color: { rgb: "854D0E" }, bold: true } },
       '½': { fill: { fgColor: { rgb: "E9D5FF" } }, font: { color: { rgb: "6B21A8" }, bold: true } },
       'A': { fill: { fgColor: { rgb: "EF4444" } }, font: { color: { rgb: "FFFFFF" }, bold: true } },
+      'L': { fill: { fgColor: { rgb: "B91C1C" } }, font: { color: { rgb: "FFFFFF" }, bold: true } }, // Merah Gelap buat Libur
       'WEEKEND': { fill: { fgColor: { rgb: "EF4444" } } },
     }
 
-    // --- B. BUILD TABLE HEADER ---
     const tableHeaderLabel = [
       "No", "Nama Pegawai", "Jabatan", ...daysHeader, 
-      "Total Hari (H)", "Total Shift", "Telat", "Izin", "Cuti", "Sakit", "½ Hari", "Alpha",
-      "Sisa Cuti" // Header Baru
+      "Hadir", "Shift", "Telat", "Izin", "Cuti", "Sakit", "½", "Alpha", "Sisa"
     ]
-    const tableHeaderRow = tableHeaderLabel.map((h, idx) => {
-        const s = idx === tableHeaderLabel.length - 1 ? headerSisaStyle : headerStyle
-        return { v: h, s }
-    })
+    const tableHeaderRow = tableHeaderLabel.map(h => ({ v: h, s: headerStyle }))
 
-    // --- C. BUILD TABLE BODY ---
     const tableBodyRows: any[][] = []
     matrixData.forEach(row => {
       const rowCells: any[] = []
-      
       const baseStyle = { border: borderStyle, alignment: { vertical: "center" } }
+      
       rowCells.push({ v: row.no, s: { ...baseStyle, alignment: { horizontal: "center" } } })
       rowCells.push({ v: row.profile.full_name, s: baseStyle })
       rowCells.push({ v: row.profile.position, s: baseStyle })
@@ -397,115 +405,57 @@ export default function RekapAbsensiMatrix() {
         let cellStyle = { ...baseStyle, alignment: { horizontal: "center" } }
         let val = day.code === '-' ? '' : day.code
 
-        if (day.isHoliday) {
+        // Logic Warna di Excel (SINKRON DENGAN TAMPILAN)
+        if (day.code === 'L') { // Libur Nasional
+             cellStyle = { ...cellStyle, ...styles['L'] }
+        } else if (day.isHoliday) { // Weekend
              cellStyle = { ...cellStyle, ...styles['WEEKEND'] }
              if (val === '') val = ''
         } else if (styles[val]) {
              cellStyle = { ...cellStyle, ...styles[val] }
         }
-
         rowCells.push({ v: val, s: cellStyle })
       })
 
+      // Stats Columns
       const statStyle = { border: borderStyle, alignment: { horizontal: "center" }, font: { bold: true } }
-      rowCells.push({ v: row.stats.H, s: { ...statStyle, fill: { fgColor: { rgb: "DCFCE7" } } } })
-      rowCells.push({ v: row.stats.Sft, s: { ...statStyle, fill: { fgColor: { rgb: "BBF7D0" } } } })
-      rowCells.push({ v: row.stats.T, s: { ...statStyle, fill: { fgColor: { rgb: "FEF9C3" } } } })
-      rowCells.push({ v: row.stats.I, s: { ...statStyle, fill: { fgColor: { rgb: "FEF08A" } } } })
-      rowCells.push({ v: row.stats.C, s: { ...statStyle, fill: { fgColor: { rgb: "DBEAFE" } } } })
-      rowCells.push({ v: row.stats.S, s: { ...statStyle, fill: { fgColor: { rgb: "FFEDD5" } } } })
-      rowCells.push({ v: row.stats.Half, s: { ...statStyle, fill: { fgColor: { rgb: "F3E8FF" } } } })
-      rowCells.push({ v: row.stats.A, s: { ...statStyle, fill: { fgColor: { rgb: "FEE2E2" } }, font: { color: { rgb: "DC2626" }, bold: true } } })
-
-      // Value Sisa Cuti
-      const sisaVal = row.remainingLeave !== null ? row.remainingLeave : "-"
-      rowCells.push({ 
-          v: sisaVal, 
-          s: { 
-              ...statStyle, 
-              fill: { fgColor: { rgb: "DBEAFE" } }, 
-              font: { bold: true, color: { rgb: "1E3A8A" } } 
-          } 
-      })
+      rowCells.push({ v: row.stats.H, s: statStyle })
+      rowCells.push({ v: row.stats.Sft, s: statStyle })
+      rowCells.push({ v: row.stats.T, s: statStyle })
+      rowCells.push({ v: row.stats.I, s: statStyle })
+      rowCells.push({ v: row.stats.C, s: statStyle })
+      rowCells.push({ v: row.stats.S, s: statStyle })
+      rowCells.push({ v: row.stats.Half, s: statStyle })
+      rowCells.push({ v: row.stats.A, s: { ...statStyle, font: { color: { rgb: "DC2626" }, bold: true } } })
+      rowCells.push({ v: row.remainingLeave ?? "-", s: { ...statStyle, fill: { fgColor: { rgb: "DBEAFE" } } } })
 
       tableBodyRows.push(rowCells)
     })
 
-    // --- D. BUILD LEGEND (KETERANGAN) ---
-    const legendData = [
-        { code: 'H', desc: 'Hadir (1 Shift)', style: styles['H'] },
-        { code: '2x', desc: 'Hadir (2 Shift)', style: styles['2x'] },
-        { code: 'T', desc: 'Terlambat (1 Shift)', style: styles['T'] },
-        { code: '2T¹', desc: '2 Shift (1 Telat)', style: styles['2T¹'] },
-        { code: '2T²', desc: '2 Shift (2 Telat)', style: styles['2T²'] },
-        { code: 'C', desc: 'Cuti', style: styles['C'] },
-        { code: 'S', desc: 'Sakit', style: styles['S'] },
-        { code: 'I', desc: 'Izin', style: styles['I'] },
-        { code: '½', desc: 'Setengah Hari', style: styles['½'] },
-        { code: 'A', desc: 'Alpha (Tanpa Keterangan)', style: styles['A'] },
-    ]
-
-    const legendRows: any[][] = []
-    legendRows.push([{ v: "", s: {} }]) // Jarak Kosong
-    legendRows.push([{ v: "KETERANGAN KODE:", s: { font: { bold: true, underline: true } } }])
-    
-    legendData.forEach(item => {
-        legendRows.push([
-            { v: "", s: {} }, // Kolom No (kosong)
-            { v: item.code, s: { ...item.style, border: borderStyle, alignment: { horizontal: "center" } } }, // Kode berwarna
-            { v: item.desc, s: { alignment: { vertical: "center" } } } // Deskripsi
-        ])
-    })
-
-    // --- E. COMPOSE FINAL EXCEL DATA ---
-    const totalColumns = tableHeaderLabel.length
-    
-    // 1. Judul Utama
-    const titleRow = Array(totalColumns).fill({ v: "", s: titleStyle })
-    titleRow[0] = { v: "REKAP ABSENSI PEGAWAI", s: titleStyle }
-    
-    // 2. Sub Judul (Periode)
-    const periodRow = Array(totalColumns).fill({ v: "", s: periodStyle })
-    periodRow[0] = { v: `PERIODE: ${monthName.toUpperCase()}`, s: periodStyle }
-
-    // 3. Spasi
-    const spacerRow = [{ v: "", s: {} }]
+    const titleRow = [{ v: "REKAP ABSENSI PEGAWAI", s: { font: { sz: 14, bold: true }, alignment: { horizontal: "center" } } }]
+    const periodRow = [{ v: `PERIODE: ${monthName.toUpperCase()}`, s: { font: { sz: 11, bold: true }, alignment: { horizontal: "center" } } }]
 
     const ws_data = [
-        titleRow,
-        periodRow,
-        spacerRow,
-        tableHeaderRow,
-        ...tableBodyRows,
-        ...legendRows
+        titleRow, periodRow, [{ v: "", s: {} }], tableHeaderRow, ...tableBodyRows
     ]
 
-    // --- F. CREATE WORKSHEET ---
     const ws = XLSX.utils.aoa_to_sheet([])
     XLSX.utils.sheet_add_aoa(ws, ws_data, { origin: "A1" })
 
-    // --- G. MERGE CELLS (JUDUL & PERIODE) ---
+    // Merge Judul
     if(!ws['!merges']) ws['!merges'] = []
-    
-    // Merge Judul (Row 0, Col 0 sampai Col Akhir)
-    ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: totalColumns - 1 } })
-    // Merge Periode (Row 1, Col 0 sampai Col Akhir)
-    ws['!merges'].push({ s: { r: 1, c: 0 }, e: { r: 1, c: totalColumns - 1 } })
+    ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: tableHeaderLabel.length - 1 } })
+    ws['!merges'].push({ s: { r: 1, c: 0 }, e: { r: 1, c: tableHeaderLabel.length - 1 } })
 
-    // --- H. COL WIDTH ---
-    const wscols = [{ wch: 5 }, { wch: 30 }, { wch: 20 }] // No, Nama, Jabatan
-    for(let i=0; i<daysCount; i++) wscols.push({ wch: 4 }) // Tanggal
-    for(let i=0; i<8; i++) wscols.push({ wch: 8 }) // Statistik
-    wscols.push({ wch: 12 }) // Lebar untuk Sisa Cuti
+    // Col Width
+    const wscols = [{ wch: 5 }, { wch: 30 }, { wch: 20 }]
+    for(let i=0; i<daysCount; i++) wscols.push({ wch: 4 })
+    for(let i=0; i<9; i++) wscols.push({ wch: 6 })
     ws['!cols'] = wscols
 
-    // --- I. SAVE ---
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Rekap Absensi")
-    
-    const fileName = `Rekap_Absensi_${format(new Date(year, month), 'MMMM_yyyy', {locale: idLocale})}.xlsx`
-    XLSX.writeFile(wb, fileName)
-    
+    XLSX.writeFile(wb, `Rekap_Absensi_${format(new Date(year, month), 'MMMM_yyyy', {locale: idLocale})}.xlsx`)
     toast.success("Excel berhasil didownload!")
   }
 
@@ -514,13 +464,12 @@ export default function RekapAbsensiMatrix() {
   // =========================================================================
   const daysInCurrentMonth = getDaysInMonth(new Date(year, month))
   const dateHeaders = Array.from({ length: daysInCurrentMonth }, (_, i) => i + 1)
-  const monthName = format(new Date(year, month), 'MMMM yyyy', { locale: idLocale })
+  const monthNameStr = format(new Date(year, month), 'MMMM yyyy', { locale: idLocale })
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 font-sans text-xs sm:text-sm">
       <Toaster position="top-center" />
       
-      {/* HEADER */}
       <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-4 space-y-4">
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-3 w-full md:w-auto">
@@ -529,7 +478,7 @@ export default function RekapAbsensiMatrix() {
             </Button>
             <div>
               <h1 className="text-lg font-bold uppercase text-gray-800">Rekap Absensi Matrix</h1>
-              <p className="text-gray-500 text-xs">Periode: {monthName}</p>
+              <p className="text-gray-500 text-xs">Periode: {monthNameStr}</p>
             </div>
           </div>
           <Button onClick={exportToExcel} className="bg-green-600 hover:bg-green-700 text-white w-full md:w-auto gap-2 shadow-sm">
@@ -537,7 +486,6 @@ export default function RekapAbsensiMatrix() {
           </Button>
         </div>
 
-        {/* Filter */}
         <div className="flex flex-wrap gap-3 items-center bg-gray-50 p-3 rounded-md border border-gray-100">
             <div className="relative">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
@@ -546,7 +494,7 @@ export default function RekapAbsensiMatrix() {
             </div>
             <div className="flex gap-2">
                 <select value={month} onChange={(e) => setMonth(parseInt(e.target.value))} className="border p-2 rounded-md text-sm bg-white cursor-pointer">
-                    {Array.from({length: 12}, (_, i) => <option key={i} value={i}>{format(new Date(2023, i), 'MMMM', { locale: idLocale })}</option>)}
+                    {Array.from({length: 12}, (_, i) => <option key={i} value={i}>{format(new Date(year, i), 'MMMM', { locale: idLocale })}</option>)}
                 </select>
                 <select value={year} onChange={(e) => setYear(parseInt(e.target.value))} className="border p-2 rounded-md text-sm bg-white cursor-pointer">
                     {[2023, 2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
@@ -563,11 +511,10 @@ export default function RekapAbsensiMatrix() {
         </div>
       </div>
 
-      {/* MATRIX TABLE */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 bg-white rounded-lg shadow-sm h-64">
             <Loader2 className="animate-spin text-blue-600 w-8 h-8 mb-2"/>
-            <p className="text-gray-500">Memuat data absensi & cuti...</p>
+            <p className="text-gray-500">Memuat data absensi...</p>
         </div>
       ) : matrixData.length === 0 ? (
         <div className="text-center py-20 bg-white rounded-lg shadow-sm text-gray-500">Tidak ada data pegawai.</div>
@@ -592,12 +539,17 @@ export default function RekapAbsensiMatrix() {
                     <tr className="bg-gray-100 text-gray-800 font-bold">
                         {dateHeaders.map(d => {
                              const dateCheck = new Date(year, month, d)
-                             const isLibur = isSunday(dateCheck) || isSaturday(dateCheck)
-                             return <th key={d} className={`border border-gray-300 w-8 h-8 ${isLibur ? 'bg-red-500 text-white' : ''}`}>{d}</th>
+                             const dateStr = format(dateCheck, 'yyyy-MM-dd')
+                             const isLiburNasional = !!PUBLIC_HOLIDAYS[dateStr]
+                             const isWeekend = isSunday(dateCheck) || isSaturday(dateCheck)
+                             
+                             // Header merah jika Libur Nasional atau Weekend
+                             const bgClass = (isLiburNasional || isWeekend) ? 'bg-red-500 text-white' : ''
+                             return <th key={d} className={`border border-gray-300 w-8 h-8 ${bgClass}`} title={isLiburNasional ? PUBLIC_HOLIDAYS[dateStr] : ''}>{d}</th>
                         })}
                         <th className="border border-gray-300 w-10 bg-green-100 text-green-700" title="Total Hari Hadir (Max 30)">H</th>
                         <th className="border border-gray-300 w-10 bg-green-200 text-green-800" title="Total Shift Hadir (Bisa >30)">Sft</th>
-                        <th className="border border-gray-300 w-9 bg-yellow-500 text-white" title="Total Terlambat">T</th>
+                        <th className="border border-gray-300 w-9 bg-yellow-500 text-white">T</th>
                         <th className="border border-gray-300 w-9 bg-yellow-100 text-yellow-700">I</th>
                         <th className="border border-gray-300 w-9 bg-blue-100 text-blue-700">C</th>
                         <th className="border border-gray-300 w-9 bg-orange-100 text-orange-700">S</th>
@@ -652,6 +604,8 @@ export default function RekapAbsensiMatrix() {
         <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-blue-200 border border-blue-300 inline-block"></span> Cuti (C)</div>
         <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-purple-200 border border-purple-300 inline-block"></span> ½ Hari</div>
         <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-orange-200 border border-orange-300 inline-block"></span> Sakit (S)</div>
+        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-red-600 border border-red-700 inline-block text-white text-center leading-4 font-bold">L</span> Libur Nasional</div>
+        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-red-500 border border-red-600 inline-block"></span> Akhir Pekan</div>
         <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-red-600 border border-red-700 inline-block text-white text-center leading-4 font-bold">A</span> Alpha</div>
       </div>
     </div>
