@@ -2,40 +2,55 @@
 
 import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Lock, Eye, EyeOff } from 'lucide-react'
 
 export default function ResetPasswordPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
   const [userReady, setUserReady] = useState(false)
 
-  // Cek apakah user otomatis login dari link reset password
+  // Cek apakah user aktif (login sementara dari link email)
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user }, error } = await supabase.auth.getUser()
-      if (error || !user) {
-        setError('Link reset password tidak valid atau sudah kadaluarsa.')
-      } else {
-        setUserReady(true)
-      }
+      if (!user || error) setError('Link reset password tidak valid atau kadaluarsa.')
+      else setUserReady(true)
     }
-
     checkUser()
   }, [])
+
+  // Validasi password kuat
+  const validatePassword = (pwd: string) => {
+    const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/
+    return regex.test(pwd)
+  }
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!userReady) return
+
+    if (!validatePassword(password)) {
+      setError('Password harus minimal 8 karakter, berisi huruf besar, huruf kecil, angka, dan simbol.')
+      return
+    }
+
+    if (password !== confirmPassword) {
+      setError('Password dan konfirmasi password tidak cocok.')
+      return
+    }
 
     setLoading(true)
     setError(null)
@@ -79,7 +94,6 @@ export default function ResetPasswordPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              minLength={6}
               disabled={!userReady || loading}
             />
             <button
@@ -88,6 +102,25 @@ export default function ResetPasswordPage() {
               className="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600"
             >
               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+            </button>
+          </div>
+
+          <div className="relative">
+            <input
+              type={showConfirm ? 'text' : 'password'}
+              placeholder="Konfirmasi Password"
+              className="w-full p-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              disabled={!userReady || loading}
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirm(!showConfirm)}
+              className="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600"
+            >
+              {showConfirm ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
           </div>
 
