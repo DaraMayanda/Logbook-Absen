@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
-import { Lock, Eye, EyeOff, CheckCircle, AlertCircle } from 'lucide-react'
+import { Lock, Eye, EyeOff, CheckCircle, AlertCircle, XCircle } from 'lucide-react'
 
 export default function ResetPasswordPage() {
   const router = useRouter()
@@ -36,21 +36,17 @@ export default function ResetPasswordPage() {
     checkUser()
   }, [])
 
-  // Fungsi Validasi Password Kuat
-  const validatePassword = (pwd: string) => {
-    const minLength = 8
-    const hasUpperCase = /[A-Z]/.test(pwd)
-    const hasLowerCase = /[a-z]/.test(pwd)
-    const hasNumbers = /\d/.test(pwd)
-    const hasNonalphas = /[\W_]/.test(pwd) // Simbol
+  // --- LOGIKA VALIDASI STRICT (KETAT) ---
+  const requirements = [
+    { met: password.length >= 8, label: "Minimal 8 karakter" },
+    { met: /[A-Z]/.test(password), label: "Huruf Besar (A-Z)" },
+    { met: /[a-z]/.test(password), label: "Huruf Kecil (a-z)" },
+    { met: /\d/.test(password), label: "Angka (0-9)" },
+    { met: /[\W_]/.test(password), label: "Simbol (!@#$%^&*)" },
+  ]
 
-    if (pwd.length < minLength) return "Password minimal 8 karakter."
-    if (!hasUpperCase) return "Password harus memiliki huruf besar (A-Z)."
-    if (!hasLowerCase) return "Password harus memiliki huruf kecil (a-z)."
-    if (!hasNumbers) return "Password harus memiliki angka (0-9)."
-    if (!hasNonalphas) return "Password harus memiliki simbol (!@#$%^&*)."
-    return null
-  }
+  const isPasswordValid = requirements.every(req => req.met)
+  const isMatch = password === confirmPassword && password !== ''
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -59,16 +55,13 @@ export default function ResetPasswordPage() {
     setError(null)
     setMessage(null)
 
-    // 1. Cek Kesamaan Password
-    if (password !== confirmPassword) {
+    // Validasi Ganda (Jaga-jaga jika tombol di-hack enable)
+    if (!isMatch) {
       setError('Konfirmasi password tidak cocok.')
       return
     }
-
-    // 2. Cek Kekuatan Password
-    const weakError = validatePassword(password)
-    if (weakError) {
-      setError(weakError)
+    if (!isPasswordValid) {
+      setError('Password belum memenuhi syarat keamanan.')
       return
     }
 
@@ -79,11 +72,10 @@ export default function ResetPasswordPage() {
       const { error } = await supabase.auth.updateUser({ password })
       if (error) throw error
 
-      // 4. SUKSES & LOGOUT (PENTING AGAR TIDAK LANGSUNG KE DASHBOARD)
-      // Kita sign out user agar session lama mati, jadi dia dipaksa login ulang dengan password baru
+      // 4. SUKSES & LOGOUT
       await supabase.auth.signOut()
 
-      setMessage('Password berhasil diperbarui! Silakan login kembali dengan password baru.')
+      setMessage('Password berhasil diperbarui! Mengalihkan ke login...')
       
       // Redirect ke login setelah 2 detik
       setTimeout(() => {
@@ -105,7 +97,7 @@ export default function ResetPasswordPage() {
           </div>
           <h2 className="text-2xl font-bold text-[#003366]">Reset Password</h2>
           <p className="text-gray-500 text-sm mt-1 text-center">
-            Buat password baru yang aman (Minimal 8 karakter, Huruf Besar, Kecil, Angka & Simbol)
+            Buat password baru yang kuat dan aman.
           </p>
         </div>
 
@@ -144,13 +136,27 @@ export default function ResetPasswordPage() {
             </button>
           </div>
 
+          {/* Indikator Kekuatan Password */}
+          <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 bg-gray-50 p-3 rounded-lg border border-gray-100">
+            {requirements.map((req, index) => (
+              <div key={index} className={`flex items-center gap-1.5 ${req.met ? 'text-green-600 font-medium' : 'text-gray-400'}`}>
+                {req.met ? (
+                  <CheckCircle className="w-3.5 h-3.5" />
+                ) : (
+                  <div className="w-3.5 h-3.5 rounded-full border border-gray-300" />
+                )}
+                <span>{req.label}</span>
+              </div>
+            ))}
+          </div>
+
           {/* Input Konfirmasi Password */}
           <div className="relative">
             <input
               type={showConfirmPassword ? 'text' : 'password'}
               placeholder="Ulangi Password Baru"
               className={`w-full p-3 pr-10 border rounded-lg focus:ring-2 outline-none transition ${
-                confirmPassword && password !== confirmPassword 
+                confirmPassword && !isMatch
                   ? 'border-red-500 focus:ring-red-500 bg-red-50' 
                   : 'border-gray-300 focus:ring-blue-500'
               }`}
@@ -168,15 +174,21 @@ export default function ResetPasswordPage() {
             </button>
           </div>
 
-          {/* Indikator Match Password */}
-          {confirmPassword && password !== confirmPassword && (
-            <p className="text-xs text-red-600 mt-1">* Password tidak cocok</p>
+          {confirmPassword && !isMatch && (
+            <p className="text-xs text-red-600 flex items-center gap-1">
+              <XCircle className="w-3 h-3" /> Password tidak cocok
+            </p>
           )}
 
           <button
             type="submit"
-            disabled={!userReady || loading}
-            className="w-full bg-[#003366] text-white py-3 rounded-lg font-bold hover:bg-blue-800 transition disabled:bg-gray-400 shadow-md hover:shadow-lg transform active:scale-95 duration-200 flex justify-center items-center gap-2"
+            // Tombol MATI jika password belum valid atau tidak cocok
+            disabled={!userReady || loading || !isPasswordValid || !isMatch}
+            className={`w-full py-3 rounded-lg font-bold transition flex justify-center items-center gap-2 ${
+              !userReady || loading || !isPasswordValid || !isMatch
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-[#003366] text-white hover:bg-blue-800 shadow-md hover:shadow-lg transform active:scale-95'
+            }`}
           >
             {loading ? (
               <>
