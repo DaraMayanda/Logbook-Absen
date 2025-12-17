@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@supabase/ssr' // <-- GANTI INI: Pakai library SSR biar Cookie terbaca Server
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { Eye, EyeOff } from 'lucide-react' // Import ikon mata
 
 export default function LoginClient() {
   const [email, setEmail] = useState('')
@@ -12,6 +13,9 @@ export default function LoginClient() {
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [redirectTo, setRedirectTo] = useState<string | null>(null)
+  
+  // State untuk toggle password visibility
+  const [showPassword, setShowPassword] = useState(false)
 
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -162,19 +166,32 @@ export default function LoginClient() {
               />
             </div>
 
-            {/* Password */}
+            {/* Password - UPDATE: Tambah tombol mata */}
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700">Password</label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                className="block w-full rounded-lg border-gray-300 py-3 pl-3 pr-3 shadow-sm focus:border-[#4A90E2] focus:ring-[#4A90E2] sm:text-sm"
-                placeholder="Masukkan Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+              <div className="relative">
+                <input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"} // Logic toggle type
+                  required
+                  className="block w-full rounded-lg border-gray-300 py-3 pl-3 pr-10 shadow-sm focus:border-[#4A90E2] focus:ring-[#4A90E2] sm:text-sm" // Tambah pr-10 agar teks tidak tertutup icon
+                  placeholder="Masukkan Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 focus:outline-none"
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-5 w-5" aria-hidden="true" />
+                  ) : (
+                    <Eye className="h-5 w-5" aria-hidden="true" />
+                  )}
+                </button>
+              </div>
               <div className="text-right mt-2">
                 <button
                   type="button"
