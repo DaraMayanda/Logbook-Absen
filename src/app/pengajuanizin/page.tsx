@@ -7,7 +7,7 @@ import toast, { Toaster } from 'react-hot-toast'
 import { ArrowLeft, Loader2, Upload } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 
-// Tipe data (Tidak berubah)
+// Tipe data
 type PermissionRequest = {
   id: number
   jenis_izin: string
@@ -19,24 +19,34 @@ type PermissionRequest = {
   created_at: string
   durasi_hari_kerja?: number
   potong_gaji?: boolean
+  half_day?: boolean          // Tambahan field untuk display
+  half_day_shift?: string     // Tambahan field untuk display
 }
 
 export default function PengajuanIzinPage() {
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
+  
+  // State Form
   const [jenisIzin, setJenisIzin] = useState('')
   const [tanggalMulai, setTanggalMulai] = useState('')
   const [tanggalSelesai, setTanggalSelesai] = useState('')
   const [alasan, setAlasan] = useState('')
   const [lampiran, setLampiran] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
+  
+  // State Baru: Izin Setengah Hari (Update tipe shift ke 'pagi' | 'malam')
+  const [halfDay, setHalfDay] = useState(false)
+  const [halfDayShift, setHalfDayShift] = useState<'pagi' | 'malam' | ''>('')
+
+  // State Data
   const [izinRequests, setIzinRequests] = useState<PermissionRequest[]>([])
   const [search, setSearch] = useState('')
 
   useEffect(() => setMounted(true), [])
 
-  // AMBIL USER (Tidak berubah)
+  // AMBIL USER
   useEffect(() => {
     if (!mounted) return
     const fetchUser = async () => {
@@ -47,13 +57,13 @@ export default function PengajuanIzinPage() {
     fetchUser()
   }, [mounted, router])
 
-  // FETCH RIWAYAT (Tidak berubah)
+  // FETCH RIWAYAT
   const fetchIzinRequests = async () => {
     if (!userId) return
 
     const { data: requests, error } = await supabase
       .from('permission_requests')
-      .select('id, jenis_izin, tanggal_mulai, tanggal_selesai, alasan, lampiran_url, status, created_at, durasi_hari_kerja, potong_gaji')
+      .select('id, jenis_izin, tanggal_mulai, tanggal_selesai, alasan, lampiran_url, status, created_at, durasi_hari_kerja, potong_gaji, half_day, half_day_shift') // Ambil field half_day
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
 
@@ -72,7 +82,7 @@ export default function PengajuanIzinPage() {
       .select('permission_request_id, level, status')
       .in('permission_request_id', requests.map(r => r.id))
 
-    const merged = requests.map((req: PermissionRequest) => {
+    const merged = requests.map((req: any) => {
       const level2 = approvals?.find(a => a.permission_request_id === req.id && a.level === 2)
       const level1 = approvals?.find(a => a.permission_request_id === req.id && a.level === 1)
 
@@ -91,11 +101,13 @@ export default function PengajuanIzinPage() {
   useEffect(() => { fetchIzinRequests() }, [userId])
 
 
-  // =================== SUBMIT PENGAJUAN (LOGIKA DIPERBAIKI) ===================
+  // =================== SUBMIT PENGAJUAN ===================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!jenisIzin || !tanggalMulai || !tanggalSelesai || !alasan)
       return toast.error('Semua field wajib diisi')
+    if (halfDay && !halfDayShift)
+       return toast.error('Silakan pilih Shift (Pagi/Malam) untuk izin setengah hari')
     if (!userId) return toast.error('User belum terdeteksi')
 
     setLoading(true)
@@ -123,39 +135,40 @@ export default function PengajuanIzinPage() {
         toast.dismiss(loadingToast);
       }
 
-      // 2. Panggil RPC
+      // 2. Panggil RPC (Pastikan function di database sudah support parameter baru)
       const { data, error: rpcError } = await supabase.rpc('submit_permission_request', {
         p_user_id: userId,
         p_jenis_izin: jenisIzin,
         p_tanggal_mulai: tanggalMulai,
         p_tanggal_selesai: tanggalSelesai,
         p_alasan: alasan,
-        p_lampiran_url: lampiranUrl
+        p_lampiran_url: lampiranUrl,
+        p_half_day: halfDay,              // Kirim status setengah hari
+        p_half_day_shift: halfDayShift || null // Kirim shift (pagi/malam)
       })
 
-      if (rpcError) throw rpcError; // Menangkap error jaringan/SQL
+      if (rpcError) throw rpcError; 
       
       const rpcData = data?.[0];
 
-      // --- INI PERBAIKANNYA ---
-      // Cek apakah request_id GAGAL (NULL), BUKAN apakah error_message ADA
       if (!rpcData || rpcData.request_id === null) {
-        // Jika request_id null, BARU lempar error
         throw new Error(rpcData?.error_message || 'Gagal mengajukan izin');
       }
-      // --- AKHIR PERBAIKAN ---
 
-      // Jika lolos, berarti SUKSES
       toast.success(rpcData.error_message || 'Pengajuan izin berhasil dikirim')
+      
+      // Reset Form
       setJenisIzin('')
       setTanggalMulai('')
       setTanggalSelesai('')
       setAlasan('')
       setLampiran(null)
+      setHalfDay(false)
+      setHalfDayShift('')
+      
       fetchIzinRequests()
 
     } catch (error: any) {
-      // Sekarang, 'catch' ini hanya akan menangkap error yang sesungguhnya
       console.error('Error submitting izin:', error.message)
       toast.error(error.message || 'Gagal mengirim pengajuan')
     } finally {
@@ -171,7 +184,6 @@ export default function PengajuanIzinPage() {
 
   if (!mounted) return null
 
-  // =================== UI (Tidak Berubah) ===================
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
       <Toaster position="top-center" />
@@ -219,6 +231,34 @@ export default function PengajuanIzinPage() {
                 <input type="date" className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
                        value={tanggalSelesai} onChange={(e) => setTanggalSelesai(e.target.value)} />
               </div>
+            </div>
+
+            {/* Opsi Setengah Hari (UPDATE: Pilihan Shift Pagi/Malam) */}
+            <div className="flex flex-col gap-2 pt-2">
+                <div className="flex items-center gap-2">
+                    <input 
+                        type="checkbox" 
+                        id="halfDay" 
+                        checked={halfDay} 
+                        onChange={(e) => setHalfDay(e.target.checked)} 
+                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                    />
+                    <label htmlFor="halfDay" className="text-sm font-medium text-gray-700">Izin Setengah Hari</label>
+                </div>
+
+                {halfDay && (
+                    <div className="ml-6 animate-in slide-in-from-top-2 duration-200">
+                        <select 
+                            className="border p-2 rounded-md text-sm w-full sm:w-auto bg-white focus:ring-2 focus:ring-blue-500"
+                            value={halfDayShift} 
+                            onChange={(e) => setHalfDayShift(e.target.value as 'pagi' | 'malam')}
+                        >
+                            <option value="">-- Pilih Shift --</option>
+                            <option value="pagi">Shift Pagi</option>
+                            <option value="malam">Shift Malam</option>
+                        </select>
+                    </div>
+                )}
             </div>
 
             {/* Alasan */}
@@ -293,7 +333,10 @@ export default function PengajuanIzinPage() {
                         {r.tanggal_mulai} – {r.tanggal_selesai}
                       </td>
                       <td className="p-2 border">
-                        {r.durasi_hari_kerja ?? '?'} Hari
+                        {r.half_day 
+                            ? `½ Hari (${r.half_day_shift === 'pagi' ? 'Shift Pagi' : 'Shift Malam'})` 
+                            : `${r.durasi_hari_kerja ?? '?'} Hari`
+                        }
                       </td>
                       <td className="p-2 border">
                         {r.potong_gaji ? 'Ya' : 'Tidak'}

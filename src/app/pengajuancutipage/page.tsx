@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import toast, { Toaster } from 'react-hot-toast'
-import { ArrowLeft, Loader2, Upload } from 'lucide-react' // Import Ikon Upload
+import { ArrowLeft, Loader2, Upload } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 
-// Tipe data sudah benar dari kode Anda
+// Tipe data
 type LeaveRequest = {
   id: number
   leave_type: string
@@ -27,6 +27,8 @@ export default function PengajuanCutiPage() {
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
+  
+  // State Form
   const [leaveType, setLeaveType] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -35,18 +37,17 @@ export default function PengajuanCutiPage() {
   const [halfDay, setHalfDay] = useState(false)
   const [halfDayShift, setHalfDayShift] = useState<'pagi' | 'siang' | ''>('')
   const [annualLeaveCut, setAnnualLeaveCut] = useState(true)
+  
+  // State Data & UI
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [leaveBalance, setLeaveBalance] = useState<number | null>(null)
-
-  // =================== BARU: State untuk file upload ===================
   const [suratSakitFile, setSuratSakitFile] = useState<File | null>(null)
-  // =================================================================
 
   useEffect(() => setMounted(true), [])
 
-  // =================== AMBIL USER & KUOTA (Tidak Berubah) ===================
+  // =================== 1. AMBIL USER & KUOTA CUTI ===================
   useEffect(() => {
     if (!mounted) return
     const fetchUserAndQuota = async () => {
@@ -63,6 +64,7 @@ export default function PengajuanCutiPage() {
         .single()
 
       if (quotaError && quotaError.code === 'PGRST116') {
+        // Jika belum ada kuota, buatkan default 12
         const { error: insertError } = await supabase
           .from('master_leave_quota')
           .insert({ user_id: user.id, year: currentYear, annual_quota: 12, used_leave: 0 })
@@ -75,7 +77,7 @@ export default function PengajuanCutiPage() {
     fetchUserAndQuota()
   }, [mounted, router])
 
-  // =================== FETCH RIWAYAT (Tidak Berubah) ===================
+  // =================== 2. FETCH RIWAYAT PENGAJUAN ===================
   const fetchLeaveRequests = async () => {
     if (!userId) return
 
@@ -97,6 +99,7 @@ export default function PengajuanCutiPage() {
       return
     }
 
+    // Ambil status approval detail
     const { data: approvals } = await supabase
       .from('leave_approvals')
       .select('leave_request_id, level, status')
@@ -110,7 +113,7 @@ export default function PengajuanCutiPage() {
       if (level2?.status === 'Disetujui') finalStatus = 'Disetujui'
       else if (level2?.status === 'Ditolak') finalStatus = 'Ditolak'
       else if (level1?.status === 'Ditolak') finalStatus = 'Ditolak'
-      else if (level1?.status === 'Disetujui') finalStatus = 'Disetujui' 
+      else if (level1?.status === 'Disetujui') finalStatus = 'Disetujui' // Menunggu L2
 
       return { ...req, status: finalStatus }
     })
@@ -120,57 +123,32 @@ export default function PengajuanCutiPage() {
 
   useEffect(() => { fetchLeaveRequests() }, [userId])
 
-  // =================== AUTO REFRESH KUOTA (Tidak Berubah) ===================
-  useEffect(() => {
-    if (!mounted || !userId) return
-    const fetchQuota = async () => {
-      const currentYear = new Date().getFullYear()
-      const { data: quotaData } = await supabase
-        .from('master_leave_quota')
-        .select('annual_quota, used_leave')
-        .eq('user_id', userId)
-        .eq('year', currentYear)
-        .single()
-
-      if (quotaData) {
-        setLeaveBalance(quotaData.annual_quota - quotaData.used_leave)
-      }
-    }
-    fetchQuota()
-  }, [mounted, userId, leaveRequests])
-
-  // =================== SUBMIT PENGAJUAN (DIMODIFIKASI TOTAL) ===================
+  // =================== 3. SUBMIT PENGAJUAN ===================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!leaveType || !startDate || !endDate || !reason || !address)
       return toast.error('Semua field wajib diisi')
     if (!userId) return toast.error('User belum terdeteksi')
     
-    // Validasi Sisa Cuti - Sebaiknya dihapus dari frontend
-    // Biarkan backend (trigger/RPC) yang melakukan validasi
-    
     setLoading(true)
 
-    // 1. Logika Upload File
+    // A. Upload File (Jika Cuti Sakit)
     let fileUrl: string | null = null;
     if (leaveType === 'Cuti Sakit' && suratSakitFile) {
       const loadingToast = toast.loading('Mengupload surat dokter...');
-      
-      // Buat nama file yang unik
       const fileName = `${userId}/${Date.now()}-${suratSakitFile.name}`;
       
       const { error: uploadError } = await supabase.storage
-        .from('surat_sakit') // Nama bucket Anda
+        .from('surat_sakit')
         .upload(fileName, suratSakitFile);
 
       if (uploadError) {
         toast.dismiss(loadingToast);
         toast.error(`Gagal upload file: ${uploadError.message}`);
         setLoading(false);
-        return; // Hentikan submit jika upload gagal
+        return;
       }
       
-      // Dapatkan URL publik dari file yang baru di-upload
       const { data: publicUrlData } = supabase.storage
         .from('surat_sakit')
         .getPublicUrl(fileName);
@@ -179,19 +157,18 @@ export default function PengajuanCutiPage() {
       toast.dismiss(loadingToast);
     }
 
-    // 2. Logika Overlap (Masih sama)
+    // B. Cek Overlap Tanggal
     const overlap = leaveRequests
-      .filter(lr => lr.status === 'Menunggu Persetujuan Kepala' || lr.status === 'Menunggu') // Sesuaikan status
+      .filter(lr => lr.status === 'Menunggu Persetujuan Kepala' || lr.status === 'Menunggu')
       .some(lr => (new Date(startDate) <= new Date(lr.end_date)) && (new Date(endDate) >= new Date(lr.start_date)))
 
     if (overlap) {
-      toast.error('❌ Anda masih punya pengajuan aktif yang tumpang tindih dengan tanggal ini.')
+      toast.error('❌ Anda masih punya pengajuan aktif di tanggal yang sama.')
       setLoading(false)
       return
     }
 
-    // 3. Panggil RPC dengan parameter baru
-    // PERBAIKAN TYPO: Ganti 'submit_leave' ke 'submit_leave_request'
+    // C. Submit ke Database (RPC)
     const { data, error } = await supabase.rpc('submit_leave_request', {
       p_user_id: userId,
       p_leave_type: leaveType,
@@ -202,16 +179,15 @@ export default function PengajuanCutiPage() {
       p_half_day: halfDay,
       p_half_day_shift: halfDayShift || null,
       p_annual_leave_cut: annualLeaveCut,
-      p_surat_sakit_url: fileUrl, // <-- KIRIM URL FILE
+      p_surat_sakit_url: fileUrl,
     })
 
     if (error) {
       toast.error(`Gagal submit: ${error.message}`)
     } else {
-      // Logika toast ini sekarang akan cocok dengan return type RPC
       toast.success(data?.[0]?.error_message || 'Pengajuan berhasil dikirim')
       
-      // Reset form
+      // Reset Form
       setLeaveType('')
       setStartDate('')
       setEndDate('')
@@ -219,8 +195,8 @@ export default function PengajuanCutiPage() {
       setAddress('')
       setHalfDay(false)
       setHalfDayShift('')
-      setSuratSakitFile(null) // <-- Reset state file
-      fetchLeaveRequests() // Refresh riwayat
+      setSuratSakitFile(null)
+      fetchLeaveRequests()
     }
 
     setLoading(false)
@@ -237,13 +213,15 @@ export default function PengajuanCutiPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
       <Toaster position="top-center" />
+      
+      {/* Header Halaman */}
       <div className="flex items-center mb-6 space-x-2 text-blue-700 hover:text-blue-900 transition cursor-pointer"
            onClick={() => router.push('/dashboard')}>
         <ArrowLeft size={22} />
-        <h1 className="text-xl sm:text-2xl font-semibold">Pengajuan Cuti </h1>
+        <h1 className="text-xl sm:text-2xl font-semibold">Pengajuan Cuti</h1>
       </div>
 
-      {/* FORM */}
+      {/* --- FORMULIR PENGAJUAN --- */}
       <Card className="mb-8 shadow-sm border border-gray-200">
         <CardHeader>
           <CardTitle className="text-lg sm:text-xl font-semibold text-gray-800">
@@ -252,7 +230,8 @@ export default function PengajuanCutiPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Jenis Cuti */}
+            
+            {/* 1. Jenis Cuti (HANYA 2 OPSI) */}
             <div>
               <label className="font-medium">Jenis Cuti</label>
               <select
@@ -260,16 +239,16 @@ export default function PengajuanCutiPage() {
                 value={leaveType}
                 onChange={(e) => setLeaveType(e.target.value)}
               >
-                <option value="">Pilih Jenis Cuti</option>
+                <option value="">-- Pilih Jenis Cuti --</option>
                 <option value="Cuti Tahunan">Cuti Tahunan</option>
                 <option value="Cuti Sakit">Cuti Sakit</option>
-                <option value="Cuti Karena Alasan Penting">Cuti Karena Alasan Penting</option>
-                <option value="Cuti Melahirkan">Cuti Melahirkan</option>
-                <option value="Cuti di Luar Tanggungan Negara">Cuti di Luar Tanggungan Negara</option>
               </select>
+              <p className="text-xs text-gray-500 mt-1">
+                *Cuti Alasan Penting & Izin lainnya silakan gunakan menu <strong>Pengajuan Izin</strong>.
+              </p>
             </div>
 
-            {/* Tanggal */}
+            {/* 2. Tanggal */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="font-medium">Tanggal Mulai</label>
@@ -283,143 +262,138 @@ export default function PengajuanCutiPage() {
               </div>
             </div>
 
-            {/* Alamat */}
+            {/* 3. Alamat */}
             <div>
               <label className="font-medium">Alamat Selama Cuti</label>
               <textarea className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
                         value={address} onChange={(e) => setAddress(e.target.value)}
-                        placeholder="Tuliskan alamat selama cuti..." />
+                        placeholder="Tuliskan alamat lengkap..." />
             </div>
 
-            {/* Alasan */}
+            {/* 4. Alasan */}
             <div>
               <label className="font-medium">Alasan Cuti</label>
               <textarea className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
                         value={reason} onChange={(e) => setReason(e.target.value)}
-                        placeholder="Tuliskan alasan cuti..." />
+                        placeholder="Jelaskan alasan cuti..." />
             </div>
 
-            {/* =================== BARU: Form Upload Surat Sakit =================== */}
+            {/* 5. Upload Surat (Khusus Sakit) */}
             {leaveType === 'Cuti Sakit' && (
               <div className="p-4 border-l-4 border-blue-500 bg-blue-50 rounded-md">
                 <label className="font-medium text-blue-700">Surat Keterangan Dokter</label>
                 <p className="text-xs text-gray-600 mb-2">
-                  Upload surat dokter jika ada. Jika tidak, cuti akan memotong kuota Cuti Tahunan Anda.
+                  Wajib upload surat dokter untuk Cuti Sakit.
                 </p>
                 <label htmlFor="file-upload" className={`
                   w-full flex items-center justify-center gap-2 px-4 py-2 border rounded-md cursor-pointer 
                   ${suratSakitFile ? 'bg-green-100 text-green-700' : 'bg-gray-100 hover:bg-gray-200'}
                 `}>
                   <Upload size={16} />
-                  <span>{suratSakitFile ? suratSakitFile.name : 'Pilih file...'}</span>
+                  <span>{suratSakitFile ? suratSakitFile.name : 'Pilih File (Gambar/PDF)'}</span>
                 </label>
                 <input 
                   id="file-upload"
                   type="file" 
                   className="hidden"
-                  accept="image/*,.pdf" // Hanya terima gambar atau PDF
+                  accept="image/*,.pdf"
                   onChange={(e) => setSuratSakitFile(e.target.files ? e.target.files[0] : null)}
                 />
               </div>
             )}
-            {/* =================================================================== */}
 
+            {/* 6. Opsi Tambahan (Setengah Hari & Potong Cuti) */}
+            <div className="flex flex-col gap-2 pt-2">
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="halfDay" checked={halfDay} onChange={(e) => setHalfDay(e.target.checked)} />
+                <label htmlFor="halfDay" className="text-sm">Cuti Setengah Hari</label>
+              </div>
 
-            {/* Setengah hari */}
-            <div className="flex items-center gap-2">
-              <input type="checkbox" checked={halfDay} onChange={(e) => setHalfDay(e.target.checked)} />
-              <span>Cuti Setengah Hari</span>
+              {halfDay && (
+                <div className="ml-6">
+                  <select className="border p-1 rounded text-sm"
+                          value={halfDayShift} onChange={(e) => setHalfDayShift(e.target.value as 'pagi' | 'siang')}>
+                    <option value="">- Pilih Sesi -</option>
+                    <option value="pagi">Pagi (Sampai jam 12)</option>
+                    <option value="siang">Siang (Mulai jam 13)</option>
+                  </select>
+                </div>
+              )}
+
+              {leaveType === 'Cuti Tahunan' && (
+                <div className="flex items-center space-x-2">
+                  <input type="checkbox" id="cutAnnual" checked={annualLeaveCut} onChange={(e) => setAnnualLeaveCut(e.target.checked)} />
+                  <label htmlFor="cutAnnual" className="text-sm">Potong Kuota Cuti Tahunan</label>
+                </div>
+              )}
             </div>
 
-            {halfDay && (
-              <div>
-                <label>Pilih Shift</label>
-                <select className="w-full border p-2 rounded-md focus:ring-2 focus:ring-blue-500"
-                        value={halfDayShift} onChange={(e) => setHalfDayShift(e.target.value as 'pagi' | 'siang')}>
-                  <option value="">-- Pilih --</option>
-                  <option value="pagi">Pagi</option>
-                  <option value="siang">Siang</option>
-                </select>
-              </div>
-            )}
-
-            {leaveType === 'Cuti Tahunan' && (
-              <div className="flex items-center space-x-2">
-                <input type="checkbox" checked={annualLeaveCut} onChange={(e) => setAnnualLeaveCut(e.target.checked)} />
-                <span>Potong kuota tahunan</span>
-              </div>
-            )}
-
+            {/* Info Sisa Cuti */}
             {leaveBalance !== null && (
-              <div className="p-2 bg-green-100 text-green-800 rounded text-sm text-center">
-                Sisa Cuti Tahunan: <strong>{leaveBalance}</strong> hari
+              <div className="p-3 bg-green-50 border border-green-200 text-green-800 rounded-md text-sm text-center">
+                Sisa Kuota Cuti Tahunan Anda: <strong>{leaveBalance}</strong> hari
               </div>
             )}
 
+            {/* Tombol Submit */}
             <button type="submit"
-                    className="w-full bg-blue-700 text-white p-2 rounded-md hover:bg-blue-800 transition flex items-center justify-center"
+                    className="w-full bg-blue-700 text-white py-2.5 rounded-md hover:bg-blue-800 transition flex items-center justify-center font-medium shadow-sm"
                     disabled={loading}>
-              {loading ? <Loader2 size={18} className="animate-spin" /> : 'Ajukan Cuti'}
+              {loading ? <Loader2 size={20} className="animate-spin" /> : 'Kirim Pengajuan'}
             </button>
           </form>
         </CardContent>
       </Card>
 
-      {/* RIWAYAT (Tidak Berubah) */}
+      {/* --- RIWAYAT PENGAJUAN --- */}
       <Card className="shadow-sm border border-gray-200">
-        <CardHeader className="flex flex-col sm:flex-row justify-between items-center gap-2">
+        <CardHeader className="flex flex-col sm:flex-row justify-between items-center gap-2 pb-2">
           <CardTitle className="text-lg font-semibold text-gray-800">Riwayat Pengajuan</CardTitle>
           <input
             type="text"
             placeholder="Cari data..."
-            className="border p-2 rounded-md focus:ring-2 focus:ring-blue-500 w-full sm:w-64"
+            className="border p-2 rounded-md focus:ring-2 focus:ring-blue-500 w-full sm:w-64 text-sm"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </CardHeader>
         <CardContent>
           {filteredRequests.length === 0 ? (
-            <p className="text-gray-600 text-sm text-center py-2">Belum ada pengajuan</p>
+            <p className="text-gray-500 text-sm text-center py-6">Belum ada riwayat pengajuan cuti.</p>
           ) : (
-            <div className="overflow-x-auto md:overflow-visible w-full max-w-full">
-              <div className="min-w-[600px] md:min-w-0">
-                <table className="w-full table-auto border-collapse text-xs sm:text-sm text-center">
-                  <thead className="bg-gray-100 text-gray-700">
-                    <tr>
-                      <th className="p-2 border">Jenis Cuti</th>
-                      <th className="p-2 border">Tanggal</th>
-                      <th className="p-2 border">Durasi</th>
-                      <th className="p-2 border">Status</th>
+            <div className="overflow-x-auto">
+              <table className="w-full table-auto border-collapse text-xs sm:text-sm text-left">
+                <thead className="bg-gray-100 text-gray-700">
+                  <tr>
+                    <th className="p-3 border font-semibold">Jenis</th>
+                    <th className="p-3 border font-semibold">Tanggal</th>
+                    <th className="p-3 border font-semibold text-center">Durasi</th>
+                    <th className="p-3 border font-semibold text-center">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRequests.map((lr) => (
+                    <tr key={lr.id} className="hover:bg-gray-50 transition border-b">
+                      <td className="p-3 border font-medium text-gray-800">{lr.leave_type}</td>
+                      <td className="p-3 border text-gray-600">
+                        {lr.start_date} s.d. {lr.end_date}
+                      </td>
+                      <td className="p-3 border text-center text-gray-600">
+                        {lr.half_day ? '½ Hari' : `${lr.durasi_hari_kerja ?? '-'} Hari`}
+                      </td>
+                      <td className="p-3 border text-center">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                          lr.status === 'Disetujui' ? 'bg-green-100 text-green-700 border border-green-200' :
+                          lr.status === 'Ditolak' ? 'bg-red-100 text-red-700 border border-red-200' :
+                          'bg-yellow-100 text-yellow-700 border border-yellow-200'
+                        }`}>
+                          {lr.status}
+                        </span>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRequests.map((lr) => (
-                      <tr key={lr.id} className="hover:bg-gray-50 transition">
-                        <td className="p-2 border">{lr.leave_type}</td>
-                        <td className="p-2 border">
-                          {lr.start_date} – {lr.end_date}
-                        </td>
-                        <td className="p-2 border">
-                          {lr.half_day ? '½ Hari' : `${lr.durasi_hari_kerja ?? '?'} Hari`}
-                        </td>
-                        <td className="p-2 border">
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs ${
-                              lr.status === 'Disetujui'
-                                ? 'bg-green-200 text-green-800'
-                                : lr.status === 'Ditolak'
-                                ? 'bg-red-200 text-red-800'
-                                : 'bg-yellow-200 text-yellow-800'
-                            }`}
-                          >
-                            {lr.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </CardContent>

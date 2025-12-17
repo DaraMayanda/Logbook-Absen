@@ -4,21 +4,24 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import XLSX from 'xlsx-js-style' 
+// Tambahan Library PDF
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 import { 
   ArrowLeft, 
   FileSpreadsheet, 
+  FileText, // Icon PDF
   User, 
   Calendar, 
   Filter,
   Clock, 
   Search, 
   ChevronDown,
-  CheckCircle2,
   AlertCircle,
   XCircle,
   Briefcase,
-  FileText,
+  FileText as FileIcon,
   Loader2,
   UserCheck
 } from 'lucide-react'
@@ -33,7 +36,8 @@ import {
   startOfDay, 
   isSunday, 
   isSaturday,
-  isBefore
+  isBefore,
+  isSameDay
 } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
 import dayjs from 'dayjs' 
@@ -48,23 +52,23 @@ type Profile = {
 type ShiftDetail = {
   shiftName: string
   checkIn: string | null
-  checkInLoc: string | null
-  checkInDist: number | null
-  checkInLat: number | null
-  checkInLng: number | null
   checkOut: string | null
-  checkOutLoc: string | null
-  checkOutDist: number | null
-  checkOutLat: number | null
-  checkOutLng: number | null
   lateMinutes: number
   isLate: boolean
 }
 
 type DailyRecord = {
+  // Info Pegawai
+  profileId: string
+  profileName: string
+  profilePosition: string
+  
+  // Info Tanggal
   date: Date
   dateStr: string
   dayName: string
+  
+  // Status Absensi
   status: string
   statusCode: 'H' | '2x' | 'T' | '2T¹' | '2T²' | 'A' | 'I' | 'C' | 'S' | '½' | '-' | 'Libur'
   shifts: ShiftDetail[] 
@@ -78,17 +82,21 @@ export default function DetailAbsensiPegawaiPage() {
 
   // --- Filter State ---
   const [profiles, setProfiles] = useState<Profile[]>([])
-  const [selectedProfileId, setSelectedProfileId] = useState<string>('')
+  const [selectedProfileId, setSelectedProfileId] = useState<string>('') // Kosong = Semua Pegawai
   
   const [searchTerm, setSearchTerm] = useState('')
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  const [filterType, setFilterType] = useState<'monthly' | 'custom'>('monthly')
+  // Filter Tipe: daily (default), monthly, custom
+  const [filterType, setFilterType] = useState<'daily' | 'monthly' | 'custom'>('daily')
+  
+  // State Waktu
+  const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd')) // Untuk Harian
   const [month, setMonth] = useState<number>(new Date().getMonth()) 
   const [year, setYear] = useState<number>(new Date().getFullYear())
-  const [startDate, setStartDate] = useState<string>('')
-  const [endDate, setEndDate] = useState<string>('')
+  const [startDate, setStartDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
+  const [endDate, setEndDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
 
   // --- Data State ---
   const [dailyRecords, setDailyRecords] = useState<DailyRecord[]>([])
@@ -134,12 +142,15 @@ export default function DetailAbsensiPegawaiPage() {
 
   // 2. Fetch Data Utama
   const fetchData = async () => {
-    if (!selectedProfileId) return 
     setLoading(true)
 
     try {
-      let start, end
-      if (filterType === 'monthly') {
+      // A. Tentukan Range Tanggal
+      let start: Date, end: Date
+      if (filterType === 'daily') {
+        start = new Date(selectedDate)
+        end = new Date(selectedDate)
+      } else if (filterType === 'monthly') {
         start = startOfMonth(new Date(year, month))
         end = endOfMonth(new Date(year, month))
       } else {
@@ -154,199 +165,215 @@ export default function DetailAbsensiPegawaiPage() {
       const startStr = format(start, 'yyyy-MM-dd')
       const endStr = format(end, 'yyyy-MM-dd')
 
-      // A. Ambil Data Absensi
-      const { data: attData } = await supabase
+      // B. Tentukan Target Pegawai (Satu atau Semua)
+      let targetProfiles = profiles
+      if (selectedProfileId) {
+        targetProfiles = profiles.filter(p => p.id === selectedProfileId)
+      }
+
+      if (targetProfiles.length === 0) {
+        setLoading(false)
+        return
+      }
+
+      // C. Ambil Data (Batch Fetching)
+      // 1. Absensi
+      let attQuery = supabase
         .from('attendances')
         .select(`
-            attendance_date, shift, shift_start,
-            check_in, check_in_location, check_in_distance_m, check_in_latitude, check_in_longitude,
-            check_out, check_out_location, check_out_distance_m, check_out_latitude, check_out_longitude
+            user_id, attendance_date, shift, shift_start,
+            check_in, check_out
         `)
-        .eq('user_id', selectedProfileId)
         .gte('attendance_date', startStr)
         .lte('attendance_date', endStr)
-        .order('shift', { ascending: true }) 
+        .order('shift', { ascending: true })
+      
+      if (selectedProfileId) attQuery = attQuery.eq('user_id', selectedProfileId)
+      const { data: attData } = await attQuery
 
-      // B. Ambil Data Cuti
-      const { data: leaveData } = await supabase
+      // 2. Cuti
+      let leaveQuery = supabase
         .from('leave_requests')
-        .select('start_date, end_date, leave_type, half_day')
-        .eq('user_id', selectedProfileId)
+        .select('user_id, start_date, end_date, leave_type, half_day')
         .eq('status', 'Disetujui')
         .or(`start_date.lte.${endStr},end_date.gte.${startStr}`)
+      
+      if (selectedProfileId) leaveQuery = leaveQuery.eq('user_id', selectedProfileId)
+      const { data: leaveData } = await leaveQuery
 
-      // C. Ambil Data Izin
-      const { data: permitData } = await supabase
+      // 3. Izin
+      let permitQuery = supabase
         .from('permission_requests')
-        .select('tanggal_mulai, tanggal_selesai')
-        .eq('user_id', selectedProfileId)
+        .select('user_id, tanggal_mulai, tanggal_selesai')
         .in('status', ['Disetujui', 'Disetujui Level 1', 'Disetujui Level 2'])
         .or(`tanggal_mulai.lte.${endStr},tanggal_selesai.gte.${startStr}`)
+      
+      if (selectedProfileId) permitQuery = permitQuery.eq('user_id', selectedProfileId)
+      const { data: permitData } = await permitQuery
 
       // --- PROSES DATA ---
       const days = eachDayOfInterval({ start, end })
       const today = startOfDay(new Date())
-      
       let newStats = { tepatWaktu: 0, telat: 0, izin: 0, cuti: 0, alpha: 0, totalLateMinutes: 0 }
-      
-      const records: DailyRecord[] = days.map(day => {
+      const records: DailyRecord[] = []
+
+      // Loop Hari -> Loop Pegawai (agar urut berdasarkan tanggal dulu)
+      for (const day of days) {
         const dateStr = format(day, 'yyyy-MM-dd')
         const isWeekend = isSunday(day) || isSaturday(day)
-        
-        let rec: DailyRecord = {
-            date: day,
-            dateStr,
-            dayName: format(day, 'EEEE', { locale: idLocale }),
-            status: isWeekend ? 'Libur' : '-',
-            statusCode: isWeekend ? 'Libur' : '-',
-            shifts: [],
-            notes: '',
-            color: isWeekend ? 'bg-red-50/30' : 'bg-white'
-        }
 
-        const dailyAtts = attData?.filter(a => a.attendance_date === dateStr) || []
-        
-        // --- LOGIC ABSENSI ---
-        if (dailyAtts.length > 0) {
-            let totalLateCount = 0;
-
-            rec.shifts = dailyAtts.map(att => {
-                let lateMins = 0;
-                let isLate = false;
-
-                if (att.check_in) {
-                    const checkInTime = dayjs(att.check_in)
-                    let targetHour = 8;
-                    let targetMinute = 0;
-
-                    if (att.shift_start) {
-                        if (att.shift_start.includes('T') || att.shift_start.length > 10) {
-                            const d = dayjs(att.shift_start);
-                            targetHour = d.hour();
-                            targetMinute = d.minute();
-                        } else {
-                            const parts = att.shift_start.split(':');
-                            targetHour = parseInt(parts[0]) || 0;
-                            targetMinute = parseInt(parts[1]) || 0;
-                        }
-                    } else {
-                        const isMalam = (att.shift || '').toLowerCase().includes('malam');
-                        targetHour = isMalam ? 19 : 8;
-                    }
-
-                    const shiftStart = checkInTime
-                        .hour(targetHour)
-                        .minute(targetMinute)
-                        .second(0)
-                        .millisecond(0);
-
-                    // Toleransi 10 menit
-                    const limit = shiftStart.add(10, 'minute');
-
-                    if (checkInTime.isAfter(limit)) {
-                        lateMins = checkInTime.diff(limit, 'minute');
-                        isLate = true;
-                        totalLateCount++;
-                        newStats.totalLateMinutes += lateMins;
-                    }
-                }
-
-                return {
-                    shiftName: att.shift || '-',
-                    checkIn: att.check_in,
-                    checkInLoc: att.check_in_location,
-                    checkInDist: att.check_in_distance_m,
-                    checkInLat: att.check_in_latitude,
-                    checkInLng: att.check_in_longitude,
-                    checkOut: att.check_out,
-                    checkOutLoc: att.check_out_location,
-                    checkOutDist: att.check_out_distance_m,
-                    checkOutLat: att.check_out_latitude,
-                    checkOutLng: att.check_out_longitude,
-                    lateMinutes: lateMins,
-                    isLate
-                }
-            })
-
-            // Tentukan Status Harian
-            if (dailyAtts.length > 1) { 
-                if (totalLateCount === 0) {
-                    rec.status = 'Hadir (2x)'
-                    rec.statusCode = '2x'
-                    rec.color = 'bg-green-50 border-l-4 border-green-500'
-                    newStats.tepatWaktu++ 
-                } else if (totalLateCount === 1) {
-                    rec.status = '2 Shift (1 Telat)'
-                    rec.statusCode = '2T¹'
-                    rec.color = 'bg-yellow-50 border-l-4 border-yellow-500'
-                    newStats.telat++ 
-                } else {
-                    rec.status = '2 Shift (2 Telat)'
-                    rec.statusCode = '2T²'
-                    rec.color = 'bg-yellow-100 border-l-4 border-yellow-600'
-                    newStats.telat++ 
-                }
-            } else {
-                if (totalLateCount > 0) {
-                    rec.status = 'Terlambat (T)'
-                    rec.statusCode = 'T'
-                    rec.color = 'bg-yellow-50 border-l-4 border-yellow-400'
-                    newStats.telat++ 
-                } else {
-                    rec.status = 'Hadir (H)'
-                    rec.statusCode = 'H'
-                    rec.color = 'bg-green-50 border-l-4 border-green-400'
-                    newStats.tepatWaktu++ 
-                }
+        for (const profile of targetProfiles) {
+            let rec: DailyRecord = {
+                profileId: profile.id,
+                profileName: profile.full_name,
+                profilePosition: profile.position,
+                date: day,
+                dateStr,
+                dayName: format(day, 'EEEE', { locale: idLocale }),
+                status: isWeekend ? 'Libur' : '-',
+                statusCode: isWeekend ? 'Libur' : '-',
+                shifts: [],
+                notes: '',
+                color: isWeekend ? 'bg-red-50/30' : 'bg-white'
             }
 
-        // --- LOGIC CUTI ---
-        } else if (leaveData?.some(l => {
-             const s = parseISO(l.start_date); const e = parseISO(l.end_date);
-             return (isAfter(day, s) || day.getTime() === s.getTime()) && (isBefore(day, e) || day.getTime() === e.getTime())
-        })) {
-             const l = leaveData.find(l => {
-                 const s = parseISO(l.start_date); const e = parseISO(l.end_date);
-                 return (isAfter(day, s) || day.getTime() === s.getTime()) && (isBefore(day, e) || day.getTime() === e.getTime())
-             })
-             
-             if (l?.half_day) {
-                 rec.status = 'Setengah Hari'
-                 rec.statusCode = '½'
-                 rec.color = 'bg-purple-50 border-l-4 border-purple-400'
-             } else if (l?.leave_type.toLowerCase().includes('sakit')) {
-                 rec.status = 'Sakit'
-                 rec.statusCode = 'S'
-                 rec.color = 'bg-orange-50 border-l-4 border-orange-400'
-                 newStats.cuti++
-             } else {
-                 rec.status = 'Cuti'
-                 rec.statusCode = 'C'
-                 rec.color = 'bg-blue-50 border-l-4 border-blue-400'
-                 newStats.cuti++
-             }
-             rec.notes = l?.leave_type || ''
+            // Filter data milik pegawai ini di tanggal ini
+            const dailyAtts = attData?.filter(a => a.user_id === profile.id && a.attendance_date === dateStr) || []
+            
+            // --- LOGIC ABSENSI ---
+            if (dailyAtts.length > 0) {
+                let totalLateCount = 0;
 
-        // --- LOGIC IZIN ---
-        } else if (permitData?.some(p => {
-             const s = parseISO(p.tanggal_mulai); const e = parseISO(p.tanggal_selesai);
-             return (isAfter(day, s) || day.getTime() === s.getTime()) && (isBefore(day, e) || day.getTime() === e.getTime())
-        })) {
-             rec.status = 'Izin'
-             rec.statusCode = 'I'
-             rec.color = 'bg-orange-50 border-l-4 border-orange-400'
-             newStats.izin++
+                rec.shifts = dailyAtts.map(att => {
+                    let lateMins = 0;
+                    let isLate = false;
 
-        // --- LOGIC ALPHA ---
-        } else if (!isWeekend && isAfter(today, day)) {
-            rec.status = 'Alpha'
-            rec.statusCode = 'A'
-            rec.color = 'bg-red-50 border-l-4 border-red-500'
-            newStats.alpha++
+                    if (att.check_in) {
+                        const checkInTime = dayjs(att.check_in)
+                        let targetHour = 8;
+                        let targetMinute = 0;
+
+                        if (att.shift_start) {
+                            if (att.shift_start.includes('T') || att.shift_start.length > 10) {
+                                const d = dayjs(att.shift_start);
+                                targetHour = d.hour();
+                                targetMinute = d.minute();
+                            } else {
+                                const parts = att.shift_start.split(':');
+                                targetHour = parseInt(parts[0]) || 0;
+                                targetMinute = parseInt(parts[1]) || 0;
+                            }
+                        } else {
+                            const isMalam = (att.shift || '').toLowerCase().includes('malam');
+                            targetHour = isMalam ? 19 : 8;
+                        }
+
+                        const shiftStart = checkInTime
+                            .hour(targetHour)
+                            .minute(targetMinute)
+                            .second(0)
+                            .millisecond(0);
+
+                        // Toleransi 10 menit
+                        const limit = shiftStart.add(10, 'minute');
+
+                        if (checkInTime.isAfter(limit)) {
+                            lateMins = checkInTime.diff(limit, 'minute');
+                            isLate = true;
+                            totalLateCount++;
+                            newStats.totalLateMinutes += lateMins;
+                        }
+                    }
+
+                    return {
+                        shiftName: att.shift || '-',
+                        checkIn: att.check_in,
+                        checkOut: att.check_out,
+                        lateMinutes: lateMins,
+                        isLate
+                    }
+                })
+
+                // Tentukan Status Harian
+                if (dailyAtts.length > 1) { 
+                    if (totalLateCount === 0) {
+                        rec.status = 'Hadir (2x)'
+                        rec.statusCode = '2x'
+                        rec.color = 'bg-green-50 border-l-4 border-green-500'
+                        newStats.tepatWaktu++ 
+                    } else if (totalLateCount === 1) {
+                        rec.status = '2 Shift (1 Telat)'
+                        rec.statusCode = '2T¹'
+                        rec.color = 'bg-yellow-50 border-l-4 border-yellow-500'
+                        newStats.telat++ 
+                    } else {
+                        rec.status = '2 Shift (2 Telat)'
+                        rec.statusCode = '2T²'
+                        rec.color = 'bg-yellow-100 border-l-4 border-yellow-600'
+                        newStats.telat++ 
+                    }
+                } else {
+                    if (totalLateCount > 0) {
+                        rec.status = 'Terlambat (T)'
+                        rec.statusCode = 'T'
+                        rec.color = 'bg-yellow-50 border-l-4 border-yellow-400'
+                        newStats.telat++ 
+                    } else {
+                        rec.status = 'Hadir (H)'
+                        rec.statusCode = 'H'
+                        rec.color = 'bg-green-50 border-l-4 border-green-400'
+                        newStats.tepatWaktu++ 
+                    }
+                }
+
+            // --- LOGIC CUTI ---
+            } else if (leaveData?.some(l => {
+                const s = parseISO(l.start_date); const e = parseISO(l.end_date);
+                return l.user_id === profile.id && (isAfter(day, s) || isSameDay(day, s)) && (isBefore(day, e) || isSameDay(day, e))
+            })) {
+                const l = leaveData.find(l => {
+                    const s = parseISO(l.start_date); const e = parseISO(l.end_date);
+                    return l.user_id === profile.id && (isAfter(day, s) || isSameDay(day, s)) && (isBefore(day, e) || isSameDay(day, e))
+                })
+                
+                if (l?.half_day) {
+                    rec.status = 'Setengah Hari'
+                    rec.statusCode = '½'
+                    rec.color = 'bg-purple-50 border-l-4 border-purple-400'
+                } else if (l?.leave_type.toLowerCase().includes('sakit')) {
+                    rec.status = 'Sakit'
+                    rec.statusCode = 'S'
+                    rec.color = 'bg-orange-50 border-l-4 border-orange-400'
+                    newStats.cuti++
+                } else {
+                    rec.status = 'Cuti'
+                    rec.statusCode = 'C'
+                    rec.color = 'bg-blue-50 border-l-4 border-blue-400'
+                    newStats.cuti++
+                }
+                rec.notes = l?.leave_type || ''
+
+            // --- LOGIC IZIN ---
+            } else if (permitData?.some(p => {
+                const s = parseISO(p.tanggal_mulai); const e = parseISO(p.tanggal_selesai);
+                return p.user_id === profile.id && (isAfter(day, s) || isSameDay(day, s)) && (isBefore(day, e) || isSameDay(day, e))
+            })) {
+                rec.status = 'Izin'
+                rec.statusCode = 'I'
+                rec.color = 'bg-orange-50 border-l-4 border-orange-400'
+                newStats.izin++
+
+            // --- LOGIC ALPHA ---
+            } else if (!isWeekend && isAfter(today, day)) {
+                rec.status = 'Alpha'
+                rec.statusCode = 'A'
+                rec.color = 'bg-red-50 border-l-4 border-red-500'
+                newStats.alpha++
+            }
+
+            records.push(rec)
         }
-
-        return rec
-      })
+      }
 
       setDailyRecords(records)
       setStats(newStats)
@@ -359,16 +386,27 @@ export default function DetailAbsensiPegawaiPage() {
     }
   }
 
+  // Effect: Jalankan fetchData setiap filter berubah
   useEffect(() => {
-    if (selectedProfileId) fetchData()
-  }, [selectedProfileId, month, year, startDate, endDate, filterType])
+    if (profiles.length > 0) {
+        fetchData()
+    }
+  }, [profiles, selectedProfileId, month, year, startDate, endDate, filterType, selectedDate])
 
-  // --- 3. EXPORT EXCEL (MENGGUNAKAN LIBRARY XLSX-JS-STYLE) ---
+
+  // --- 3. EXPORT EXCEL ---
   const exportExcel = () => {
-    if (dailyRecords.length === 0) return
+    if (dailyRecords.length === 0) return toast.error("Data kosong")
 
-    const selectedProfile = profiles.find(p => p.id === selectedProfileId)
-    const title = `DETAIL_${selectedProfile?.full_name.replace(/\s/g,'_')}`
+    const periodStr = filterType === 'daily' 
+        ? format(new Date(selectedDate), 'dd MMMM yyyy', { locale: idLocale }) 
+        : filterType === 'monthly'
+        ? format(new Date(year, month), 'MMMM yyyy', { locale: idLocale })
+        : `${format(new Date(startDate), 'dd MMM')} - ${format(new Date(endDate), 'dd MMM yyyy')}`
+
+    const title = selectedProfileId 
+        ? `DETAIL_${dailyRecords[0]?.profileName || 'PEGAWAI'}_${periodStr}`
+        : `REKAP_SEMUA_PEGAWAI_${periodStr}`
 
     // -- STYLES --
     const borderStyle = { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } }
@@ -383,13 +421,11 @@ export default function DetailAbsensiPegawaiPage() {
     const cellCenter = { alignment: { horizontal: "center", vertical: "center", wrapText: true }, border: borderStyle }
     const cellLeft = { alignment: { horizontal: "left", vertical: "center", wrapText: true }, border: borderStyle }
 
-    // Status Colors Mapping
+    // Mapping warna status
     const statusStyles: Record<string, any> = {
         'H': { fill: { fgColor: { rgb: "C6EFCE" } }, font: { color: { rgb: "006100" }, bold: true } }, 
         '2x': { fill: { fgColor: { rgb: "C6EFCE" } }, font: { color: { rgb: "006100" }, bold: true } },
         'T': { fill: { fgColor: { rgb: "FFEB9C" } }, font: { color: { rgb: "9C5700" }, bold: true } }, 
-        '2T¹': { fill: { fgColor: { rgb: "FFEB9C" } }, font: { color: { rgb: "9C5700" }, bold: true } },
-        '2T²': { fill: { fgColor: { rgb: "FFEB9C" } }, font: { color: { rgb: "9C5700" }, bold: true } },
         'A': { fill: { fgColor: { rgb: "FFC7CE" } }, font: { color: { rgb: "9C0006" }, bold: true } }, 
         'S': { fill: { fgColor: { rgb: "FFD9B3" } }, font: { color: { rgb: "804000" }, bold: true } }, 
         'C': { fill: { fgColor: { rgb: "BDD7EE" } }, font: { color: { rgb: "1F4E78" }, bold: true } }, 
@@ -402,7 +438,8 @@ export default function DetailAbsensiPegawaiPage() {
     ws_data.push([
         { v: "No", s: headerStyle },
         { v: "Tanggal", s: headerStyle },
-        { v: "Hari", s: headerStyle },
+        { v: "Nama Pegawai", s: headerStyle },
+        { v: "Jabatan", s: headerStyle },
         { v: "Kode", s: headerStyle },
         { v: "Status", s: headerStyle },
         { v: "Shift", s: headerStyle },
@@ -417,7 +454,6 @@ export default function DetailAbsensiPegawaiPage() {
         const checkIns = rec.shifts.map(s => s.checkIn ? format(new Date(s.checkIn), 'HH:mm') : '-').join('\n')
         const checkOuts = rec.shifts.map(s => s.checkOut ? format(new Date(s.checkOut), 'HH:mm') : '-').join('\n')
         
-        // Keterangan di Excel sesuai request: Terlambat / Tepat Waktu (tanpa menit)
         const ketStr = rec.shifts.map(s => s.isLate ? 'Terlambat' : (s.checkIn ? 'Tepat Waktu' : '-')).join('\n')
         
         let codeStyle: any = cellCenter
@@ -430,7 +466,8 @@ export default function DetailAbsensiPegawaiPage() {
         ws_data.push([
             { v: idx + 1, s: cellCenter },
             { v: rec.dateStr, s: cellCenter },
-            { v: rec.dayName, s: cellCenter },
+            { v: rec.profileName, s: cellLeft },
+            { v: rec.profilePosition, s: cellLeft },
             { v: rec.statusCode, s: codeStyle }, 
             { v: rec.status, s: cellLeft },     
             { v: shiftNames, s: cellCenter },
@@ -440,27 +477,92 @@ export default function DetailAbsensiPegawaiPage() {
         ])
     })
     
-    // Judul di atas
+    // Judul
     const finalData = [
-        [{ v: "LAPORAN DETAIL ABSENSI PEGAWAI", s: { font: { bold: true, sz: 14 } } }],
-        [{ v: `Nama: ${selectedProfile?.full_name}`, s: { font: { bold: true } } }],
-        [{ v: `Jabatan: ${selectedProfile?.position}`, s: { font: { bold: true } } }],
-        [], // Spasi
+        [{ v: "REKAPITULASI ABSENSI PEGAWAI", s: { font: { bold: true, sz: 14 } } }],
+        [{ v: `PERIODE: ${periodStr}`, s: { font: { bold: true } } }],
+        [], 
         ...ws_data
     ]
 
     const ws = XLSX.utils.aoa_to_sheet([])
     XLSX.utils.sheet_add_aoa(ws, finalData, { origin: "A1" })
 
-    // Lebar Kolom
     ws['!cols'] = [
-        {wch: 5},  {wch: 12}, {wch: 10}, {wch: 8}, {wch: 20}, {wch: 10}, {wch: 10}, {wch: 10}, {wch: 30}
+        {wch: 5}, {wch: 12}, {wch: 25}, {wch: 20}, {wch: 8}, {wch: 20}, {wch: 10}, {wch: 10}, {wch: 10}, {wch: 30}
     ]
 
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, "Detail")
+    XLSX.utils.book_append_sheet(wb, ws, "Data")
     XLSX.writeFile(wb, `${title}.xlsx`)
     toast.success("Excel Berhasil Diunduh")
+  }
+
+  // --- 4. EXPORT PDF ---
+  const exportPDF = () => {
+    if (dailyRecords.length === 0) return toast.error("Data kosong")
+
+    const periodStr = filterType === 'daily' 
+        ? format(new Date(selectedDate), 'dd MMMM yyyy', { locale: idLocale }) 
+        : filterType === 'monthly'
+        ? format(new Date(year, month), 'MMMM yyyy', { locale: idLocale })
+        : `${format(new Date(startDate), 'dd MMM')} - ${format(new Date(endDate), 'dd MMM yyyy')}`
+
+    const doc = new jsPDF('landscape')
+
+    doc.setFontSize(14)
+    doc.text("REKAPITULASI ABSENSI PEGAWAI", 14, 15)
+    doc.setFontSize(10)
+    doc.text(`PERIODE: ${periodStr}`, 14, 22)
+
+    const tableHead = [
+        ["No", "Tanggal", "Nama", "Jabatan", "Shift", "Masuk", "Pulang", "Status", "Ket."]
+    ]
+
+    const tableBody = dailyRecords.map((rec, idx) => {
+        const shiftNames = rec.shifts.map(s => s.shiftName).join('\n')
+        const checkIns = rec.shifts.map(s => s.checkIn ? format(new Date(s.checkIn), 'HH:mm') : '-').join('\n')
+        const checkOuts = rec.shifts.map(s => s.checkOut ? format(new Date(s.checkOut), 'HH:mm') : '-').join('\n')
+        const ketStr = rec.notes || rec.shifts.map(s => s.isLate ? 'Terlambat' : (s.checkIn ? 'Tepat Waktu' : '-')).join('\n')
+
+        return [
+            idx + 1,
+            rec.dateStr,
+            rec.profileName,
+            rec.profilePosition,
+            shiftNames || '-',
+            checkIns || '-',
+            checkOuts || '-',
+            rec.status,
+            ketStr
+        ]
+    })
+
+    autoTable(doc, {
+        startY: 28,
+        head: tableHead,
+        body: tableBody,
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [47, 62, 70] },
+        columnStyles: {
+            2: { cellWidth: 40 }, // Nama
+            3: { cellWidth: 25 }, // Jabatan
+            7: { cellWidth: 20, fontStyle: 'bold' }
+        },
+        // Warnai baris berdasarkan status
+        didParseCell: function(data: any) {
+            if (data.section === 'body') {
+                const status = data.row.raw[7]
+                if (status === 'Alpha') data.cell.styles.fillColor = [255, 200, 200]
+                else if (status.includes('Terlambat')) data.cell.styles.fillColor = [255, 250, 200]
+                else if (status.includes('Hadir')) data.cell.styles.fillColor = [220, 255, 220]
+            }
+        }
+    })
+
+    doc.save(`Rekap_${periodStr}.pdf`)
+    toast.success("PDF Berhasil Diunduh")
   }
 
   return (
@@ -478,23 +580,32 @@ export default function DetailAbsensiPegawaiPage() {
             </button>
             <div>
               <h1 className="text-xl font-bold text-gray-800">Detail Absensi Pegawai</h1>
-              <p className="text-gray-500 text-xs">Monitoring Individu Lengkap</p>
+              <p className="text-gray-500 text-xs">Monitoring Individu & Harian</p>
             </div>
         </div>
-        <button 
-            onClick={exportExcel} 
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition w-full md:w-auto justify-center"
-        >
-            <FileSpreadsheet className="w-4 h-4"/> Export Excel
-        </button>
+        <div className="flex gap-2 w-full md:w-auto">
+            <button 
+                onClick={exportPDF} 
+                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition flex-1 md:flex-none justify-center"
+            >
+                <FileIcon className="w-4 h-4"/> Export PDF
+            </button>
+            <button 
+                onClick={exportExcel} 
+                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition flex-1 md:flex-none justify-center"
+            >
+                <FileSpreadsheet className="w-4 h-4"/> Export Excel
+            </button>
+        </div>
       </div>
 
       {/* --- FILTER CONTROL --- */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {/* Pilih Pegawai */}
+        
+        {/* Pilih Pegawai (Opsional) */}
         <div className="bg-white p-4 rounded-xl shadow-sm border border-blue-100" ref={dropdownRef}>
             <label className="text-xs font-bold text-blue-800 flex items-center gap-2 mb-2">
-                <User className="w-4 h-4"/> PILIH PEGAWAI
+                <User className="w-4 h-4"/> PEGAWAI (Opsional)
             </label>
             <div className="relative">
                 <div 
@@ -503,11 +614,21 @@ export default function DetailAbsensiPegawaiPage() {
                 >
                     <input 
                         type="text"
-                        placeholder="Cari nama pegawai..."
-                        className="bg-transparent outline-none w-full cursor-pointer placeholder:text-gray-400"
-                        value={searchTerm}
+                        placeholder="Semua Pegawai"
+                        className="bg-transparent outline-none w-full cursor-pointer placeholder:text-gray-500 font-semibold"
+                        value={selectedProfileId ? searchTerm : "Semua Pegawai"}
+                        // Logic untuk memungkinkan typing search
                         onChange={(e) => {
                             setSearchTerm(e.target.value)
+                            if (selectedProfileId) setSelectedProfileId('') // Reset selection jika mulai mengetik
+                            setIsDropdownOpen(true)
+                        }}
+                        onClick={() => {
+                            if (!isDropdownOpen) setIsDropdownOpen(true)
+                        }}
+                        onFocus={() => {
+                            // Saat fokus, jika "Semua Pegawai", kosongkan agar user bisa ketik
+                            if (!selectedProfileId) setSearchTerm('')
                             setIsDropdownOpen(true)
                         }}
                     />
@@ -516,23 +637,29 @@ export default function DetailAbsensiPegawaiPage() {
 
                 {isDropdownOpen && (
                     <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
-                        {filteredProfiles.length > 0 ? (
-                            filteredProfiles.map(p => (
-                                <div 
-                                    key={p.id} 
-                                    className={`p-2.5 text-xs hover:bg-blue-50 cursor-pointer ${p.id === selectedProfileId ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-700'}`}
-                                    onClick={() => {
-                                        setSelectedProfileId(p.id)
-                                        setSearchTerm(p.full_name)
-                                        setIsDropdownOpen(false)
-                                    }}
-                                >
-                                    {p.full_name}
-                                </div>
-                            ))
-                        ) : (
-                            <div className="p-3 text-xs text-gray-400 text-center">Tidak ditemukan</div>
-                        )}
+                        <div 
+                            className={`p-2.5 text-xs hover:bg-blue-50 cursor-pointer font-bold text-blue-700`}
+                            onClick={() => {
+                                setSelectedProfileId('')
+                                setSearchTerm('')
+                                setIsDropdownOpen(false)
+                            }}
+                        >
+                            Semua Pegawai
+                        </div>
+                        {filteredProfiles.map(p => (
+                            <div 
+                                key={p.id} 
+                                className={`p-2.5 text-xs hover:bg-blue-50 cursor-pointer ${p.id === selectedProfileId ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-700'}`}
+                                onClick={() => {
+                                    setSelectedProfileId(p.id)
+                                    setSearchTerm(p.full_name)
+                                    setIsDropdownOpen(false)
+                                }}
+                            >
+                                {p.full_name}
+                            </div>
+                        ))}
                     </div>
                 )}
             </div>
@@ -543,18 +670,24 @@ export default function DetailAbsensiPegawaiPage() {
             <label className="text-xs font-bold text-blue-800 flex items-center gap-2 mb-3">
                 <Filter className="w-4 h-4"/> TIPE PERIODE
             </label>
-            <div className="flex bg-gray-100 p-1 rounded-lg">
+            <div className="flex bg-gray-100 p-1 rounded-lg gap-1">
+                <button 
+                    onClick={() => setFilterType('daily')}
+                    className={`flex-1 py-1.5 text-[10px] sm:text-xs font-bold rounded-md transition ${filterType === 'daily' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                    Harian
+                </button>
                 <button 
                     onClick={() => setFilterType('monthly')}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-md transition ${filterType === 'monthly' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    className={`flex-1 py-1.5 text-[10px] sm:text-xs font-bold rounded-md transition ${filterType === 'monthly' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
-                    Per Bulan
+                    Bulanan
                 </button>
                 <button 
                     onClick={() => setFilterType('custom')}
-                    className={`flex-1 py-1.5 text-xs font-bold rounded-md transition ${filterType === 'custom' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    className={`flex-1 py-1.5 text-[10px] sm:text-xs font-bold rounded-md transition ${filterType === 'custom' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                 >
-                    Custom Range
+                    Custom
                 </button>
             </div>
         </div>
@@ -564,7 +697,14 @@ export default function DetailAbsensiPegawaiPage() {
             <label className="text-xs font-bold text-blue-800 flex items-center gap-2 mb-2">
                 <Calendar className="w-4 h-4"/> ATUR TANGGAL
             </label>
-            {filterType === 'monthly' ? (
+            {filterType === 'daily' ? (
+                <input 
+                    type="date" 
+                    value={selectedDate} 
+                    onChange={(e) => setSelectedDate(e.target.value)} 
+                    className="w-full p-2.5 bg-gray-50 border rounded-lg text-xs" 
+                />
+            ) : filterType === 'monthly' ? (
                 <div className="flex gap-2">
                     <div className="relative w-full">
                         <select value={month} onChange={(e) => setMonth(parseInt(e.target.value))} className="w-full p-2.5 bg-gray-50 border rounded-lg appearance-none cursor-pointer">
@@ -589,67 +729,44 @@ export default function DetailAbsensiPegawaiPage() {
         </div>
       </div>
 
-      {/* --- STATS SUMMARY (6 KARTU SESUAI REQUEST) --- */}
+      {/* --- STATS SUMMARY --- */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
-        
-        {/* Card 1: TOTAL KEHADIRAN (Induk) */}
+        {/* Card Total */}
         <div className="bg-blue-700 p-4 rounded-xl border border-blue-800 text-white shadow-md relative overflow-hidden group">
-            <div className="absolute right-[-10px] top-[-10px] opacity-10">
-                <Briefcase className="w-16 h-16" />
-            </div>
+            <div className="absolute right-[-10px] top-[-10px] opacity-10"><Briefcase className="w-16 h-16" /></div>
             <p className="text-[10px] font-bold opacity-80 mb-1 tracking-wider uppercase">Total Kehadiran</p>
             <span className="text-3xl font-extrabold">{stats.tepatWaktu + stats.telat}</span>
             <span className="text-[10px] block opacity-80 mt-1">Hari Masuk Kerja</span>
         </div>
-
-        {/* Card 2: TEPAT WAKTU (Anak 1) */}
+        {/* Card Tepat Waktu */}
         <div className="bg-green-100 p-4 rounded-xl border border-green-300 text-green-800 relative overflow-hidden">
-           <div className="absolute right-2 top-2 opacity-20">
-                <UserCheck className="w-8 h-8" />
-            </div>
+           <div className="absolute right-2 top-2 opacity-20"><UserCheck className="w-8 h-8" /></div>
            <p className="text-[10px] font-bold opacity-70 mb-1 tracking-wider uppercase">Tepat Waktu</p>
            <span className="text-2xl font-bold">{stats.tepatWaktu}</span>
-           <span className="text-[10px] block opacity-60">Hari</span>
         </div>
-
-        {/* Card 3: TERLAMBAT (Anak 2) */}
+        {/* Card Terlambat */}
         <div className="bg-yellow-100 p-4 rounded-xl border border-yellow-300 text-yellow-800 relative overflow-hidden">
-           <div className="absolute right-2 top-2 opacity-20">
-                <Clock className="w-8 h-8" />
-            </div>
+           <div className="absolute right-2 top-2 opacity-20"><Clock className="w-8 h-8" /></div>
            <p className="text-[10px] font-bold opacity-70 mb-1 tracking-wider uppercase">Terlambat</p>
            <span className="text-2xl font-bold">{stats.telat}</span>
-           <span className="text-[10px] block opacity-60">Hari</span>
         </div>
-
-        {/* Card 4: ALPHA */}
+        {/* Card Alpha */}
         <div className="bg-red-100 p-4 rounded-xl border border-red-200 text-red-800 relative overflow-hidden">
-           <div className="absolute right-2 top-2 opacity-20">
-                <XCircle className="w-8 h-8" />
-            </div>
+           <div className="absolute right-2 top-2 opacity-20"><XCircle className="w-8 h-8" /></div>
            <p className="text-[10px] font-bold opacity-70 mb-1 tracking-wider uppercase">Alpha</p>
            <span className="text-2xl font-bold">{stats.alpha}</span>
-           <span className="text-[10px] block opacity-60">Hari</span>
         </div>
-
-        {/* Card 5: CUTI/SAKIT */}
+        {/* Card Cuti/Sakit */}
         <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 text-blue-800 relative overflow-hidden">
-           <div className="absolute right-2 top-2 opacity-20">
-                <FileText className="w-8 h-8" />
-            </div>
+           <div className="absolute right-2 top-2 opacity-20"><FileText className="w-8 h-8" /></div>
            <p className="text-[10px] font-bold opacity-70 mb-1 tracking-wider uppercase">Cuti / Sakit</p>
            <span className="text-2xl font-bold">{stats.cuti}</span>
-           <span className="text-[10px] block opacity-60">Hari</span>
         </div>
-
-        {/* Card 6: IZIN */}
+        {/* Card Izin */}
         <div className="bg-orange-100 p-4 rounded-xl border border-orange-200 text-orange-800 relative overflow-hidden">
-           <div className="absolute right-2 top-2 opacity-20">
-                <AlertCircle className="w-8 h-8" />
-            </div>
+           <div className="absolute right-2 top-2 opacity-20"><AlertCircle className="w-8 h-8" /></div>
            <p className="text-[10px] font-bold opacity-70 mb-1 tracking-wider uppercase">Izin</p>
            <span className="text-2xl font-bold">{stats.izin}</span>
-           <span className="text-[10px] block opacity-60">Hari</span>
         </div>
       </div>
 
@@ -658,11 +775,6 @@ export default function DetailAbsensiPegawaiPage() {
         <div className="py-20 flex flex-col items-center justify-center bg-white rounded-xl shadow-sm">
             <Loader2 className="animate-spin w-10 h-10 text-blue-600 mb-2"/>
             <p className="text-gray-500">Memuat data absensi...</p>
-        </div>
-      ) : !selectedProfileId ? (
-         <div className="py-20 text-center text-gray-500 border rounded-xl bg-white shadow-sm">
-            <User className="w-10 h-10 mx-auto text-gray-300 mb-2"/>
-            <p>Silakan pilih pegawai terlebih dahulu untuk melihat detail absensi.</p>
         </div>
       ) : dailyRecords.length === 0 ? (
         <div className="py-20 text-center text-gray-500 border rounded-xl bg-white shadow-sm">
@@ -675,24 +787,28 @@ export default function DetailAbsensiPegawaiPage() {
                 <table className="w-full text-left text-xs md:text-sm">
                     <thead className="bg-slate-800 text-white">
                         <tr>
-                            <th className="p-4 font-semibold w-32">Tanggal</th>
+                            <th className="p-4 font-semibold w-28">Tanggal</th>
+                            <th className="p-4 font-semibold">Nama Pegawai</th> 
+                            <th className="p-4 font-semibold">Jabatan</th>
                             <th className="p-4 font-semibold w-24">Status</th>
                             <th className="p-4 font-semibold w-24">Shift</th>
-                            <th className="p-4 font-semibold bg-slate-900 border-l border-slate-700">Masuk</th>
-                            <th className="p-4 font-semibold bg-slate-900">Lokasi Masuk</th>
-                            <th className="p-4 font-semibold border-l border-slate-700">Pulang</th>
-                            <th className="p-4 font-semibold">Lokasi Pulang</th>
+                            <th className="p-4 font-semibold bg-slate-900 border-l border-slate-700 text-center">Masuk</th>
+                            <th className="p-4 font-semibold border-l border-slate-700 text-center">Pulang</th>
                             <th className="p-4 font-semibold border-l border-slate-700">Ket.</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                         {dailyRecords.map((rec, idx) => (
-                            <tr key={idx} className={`hover:bg-gray-50 transition-colors ${rec.color}`}>
+                            <tr key={`${rec.profileId}-${idx}`} className={`hover:bg-gray-50 transition-colors ${rec.color}`}>
                                 {/* Tanggal */}
                                 <td className="p-4 whitespace-nowrap align-top">
                                     <div className="font-bold text-gray-800">{format(rec.date, 'dd MMM yyyy', { locale: idLocale })}</div>
                                     <div className="text-[10px] text-gray-500 uppercase font-semibold tracking-wide">{rec.dayName}</div>
                                 </td>
+
+                                {/* Nama & Jabatan (KOLOM BARU) */}
+                                <td className="p-4 align-top font-medium text-gray-900">{rec.profileName}</td>
+                                <td className="p-4 align-top text-gray-600">{rec.profilePosition}</td>
                                 
                                 {/* Status Badge */}
                                 <td className="p-4 align-top">
@@ -709,61 +825,32 @@ export default function DetailAbsensiPegawaiPage() {
                                     <span className="text-[10px] text-gray-400 mt-1 block">{rec.status}</span>
                                 </td>
 
-                                {/* Detail Shift */}
-                                <td colSpan={6} className="p-0 align-top">
+                                {/* Detail Shift (DIPISAH BARIS) */}
+                                <td colSpan={4} className="p-0 align-top">
                                     {rec.shifts.length > 0 ? (
                                         <div className="divide-y divide-gray-100">
                                             {rec.shifts.map((s, i) => (
-                                                <div key={i} className="grid grid-cols-6">
+                                                <div key={i} className="grid grid-cols-4">
                                                     {/* Shift Name */}
                                                     <div className="p-4 text-gray-600 font-medium col-span-1">{s.shiftName}</div>
                                                     
                                                     {/* Masuk */}
-                                                    <div className="p-4 bg-gray-50/80 border-l border-gray-100 col-span-1">
+                                                    <div className="p-4 bg-gray-50/80 border-l border-gray-100 col-span-1 text-center">
                                                         <div className="font-mono text-base font-extrabold text-slate-800">
                                                             {s.checkIn ? format(new Date(s.checkIn), 'HH:mm') : '-'}
                                                         </div>
                                                         {s.isLate && (
-                                                            <div className="flex items-center gap-1 text-[10px] text-red-600 font-bold mt-1 bg-red-50 px-1.5 py-0.5 rounded w-fit">
+                                                            <div className="flex items-center justify-center gap-1 text-[10px] text-red-600 font-bold mt-1 bg-red-50 px-1.5 py-0.5 rounded w-fit mx-auto">
                                                                 <AlertCircle className="w-3 h-3"/> Terlambat
                                                             </div>
                                                         )}
                                                     </div>
 
-                                                    {/* Lokasi Masuk */}
-                                                    <div className="p-4 bg-gray-50/80 col-span-1">
-                                                        {s.checkIn ? (
-                                                            <div className="flex flex-col gap-1">
-                                                                <div className="flex items-center gap-1 text-blue-600 truncate max-w-[150px]" title={s.checkInLoc || '-'}>
-                                                                    <Briefcase className="w-3 h-3 flex-shrink-0" />
-                                                                    <span className="text-xs truncate">{s.checkInLoc || '-'}</span>
-                                                                </div>
-                                                                {s.checkInDist !== null && (
-                                                                    <span className={`text-[10px] px-1.5 rounded w-fit ${s.checkInDist > 100 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                                                                        {s.checkInDist.toFixed(0)}m
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        ) : '-'}
-                                                    </div>
-
                                                     {/* Pulang */}
-                                                    <div className="p-4 border-l border-gray-100 col-span-1">
+                                                    <div className="p-4 border-l border-gray-100 col-span-1 text-center">
                                                         <div className="font-mono text-base font-bold text-gray-600">
                                                             {s.checkOut ? format(new Date(s.checkOut), 'HH:mm') : '-'}
                                                         </div>
-                                                    </div>
-
-                                                    {/* Lokasi Pulang */}
-                                                    <div className="p-4 col-span-1">
-                                                        {s.checkOut ? (
-                                                            <div className="flex flex-col gap-1">
-                                                                <div className="flex items-center gap-1 text-blue-600 truncate max-w-[150px]" title={s.checkOutLoc || '-'}>
-                                                                    <Briefcase className="w-3 h-3 flex-shrink-0" />
-                                                                    <span className="text-xs truncate">{s.checkOutLoc || '-'}</span>
-                                                                </div>
-                                                            </div>
-                                                        ) : '-'}
                                                     </div>
 
                                                     {/* Keterangan */}
