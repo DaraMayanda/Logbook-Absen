@@ -21,65 +21,6 @@ import {
 } from 'date-fns'
 import { id as idLocale } from 'date-fns/locale'
 
-// --- DATA HARI LIBUR NASIONAL & CUTI BERSAMA INDONESIA (2024 - 2026) ---
-// Sumber 2025: Data Resmi SKB 3 Menteri
-const PUBLIC_HOLIDAYS: Record<string, string> = {
-  // --- 2024 (Sisa Akhir Tahun) ---
-  '2024-12-25': 'Hari Raya Natal',
-  '2024-12-26': 'Cuti Bersama Natal',
-
-  // --- 2025 (LIBUR NASIONAL) ---
-  '2025-01-01': 'Tahun Baru 2025 Masehi',
-  '2025-01-27': 'Isra Mikraj Nabi Muhammad SAW',
-  '2025-01-29': 'Tahun Baru Imlek 2576 Kongzili',
-  '2025-03-29': 'Hari Suci Nyepi Tahun Baru Saka 1947',
-  '2025-03-31': 'Hari Raya Idul Fitri 1446 Hijriyah',
-  '2025-04-01': 'Hari Raya Idul Fitri 1446 Hijriyah',
-  '2025-04-18': 'Wafat Yesus Kristus',
-  '2025-04-20': 'Kebangkitan Yesus Kristus (Paskah)',
-  '2025-05-01': 'Hari Buruh Internasional',
-  '2025-05-12': 'Hari Raya Waisak 2569 BE',
-  '2025-05-29': 'Kenaikan Yesus Kristus',
-  '2025-06-01': 'Hari Lahir Pancasila',
-  '2025-06-06': 'Hari Raya Idul Adha 1446 Hijriyah',
-  '2025-06-27': 'Tahun Baru Islam 1447 Hijriyah',
-  '2025-08-17': 'Hari Kemerdekaan Republik Indonesia',
-  '2025-09-05': 'Maulid Nabi Muhammad SAW',
-  '2025-12-25': 'Hari Raya Natal',
-
-  // --- 2025 (CUTI BERSAMA) ---
-  '2025-01-28': 'Cuti Bersama Tahun Baru Imlek',
-  '2025-03-28': 'Cuti Bersama Hari Suci Nyepi',
-  '2025-04-02': 'Cuti Bersama Idul Fitri 1446H',
-  '2025-04-03': 'Cuti Bersama Idul Fitri 1446H',
-  '2025-04-04': 'Cuti Bersama Idul Fitri 1446H',
-  '2025-04-07': 'Cuti Bersama Idul Fitri 1446H',
-  '2025-05-13': 'Cuti Bersama Waisak',
-  '2025-05-30': 'Cuti Bersama Kenaikan Yesus Kristus',
-  '2025-06-09': 'Cuti Bersama Idul Adha 1446H',
-  // '2025-08-18': 'Cuti Bersama Kemerdekaan RI', // (Opsional jika ada kebijakan khusus)
-  '2025-12-26': 'Cuti Bersama Hari Raya Natal',
-
-  // --- 2026 (Estimasi Kasar - Untuk Jaga-jaga) ---
-  '2026-01-01': 'Tahun Baru 2026 Masehi',
-  '2026-02-16': 'Isra Mikraj Nabi Muhammad SAW (Estimasi)',
-  '2026-02-17': 'Tahun Baru Imlek 2577 Kongzili (Estimasi)',
-  '2026-03-19': 'Hari Suci Nyepi Tahun Baru Saka 1948 (Estimasi)',
-  '2026-03-20': 'Idul Fitri 1447 Hijriah (Estimasi)',
-  '2026-03-21': 'Idul Fitri 1447 Hijriah (Estimasi)',
-  '2026-04-03': 'Wafat Yesus Kristus',
-  '2026-04-05': 'Kebangkitan Yesus Kristus (Paskah)',
-  '2026-05-01': 'Hari Buruh Internasional',
-  '2026-05-14': 'Kenaikan Yesus Kristus',
-  '2026-05-27': 'Idul Adha 1447 Hijriah (Estimasi)',
-  '2026-05-31': 'Hari Raya Waisak 2570 BE (Estimasi)',
-  '2026-06-01': 'Hari Lahir Pancasila',
-  '2026-06-16': 'Tahun Baru Islam 1448 Hijriah (Estimasi)',
-  '2026-08-17': 'Hari Kemerdekaan RI',
-  '2026-08-25': 'Maulid Nabi Muhammad SAW (Estimasi)',
-  '2026-12-25': 'Hari Raya Natal',
-}
-
 // --- Tipe Data ---
 type Profile = {
   id: string
@@ -141,6 +82,9 @@ export default function RekapAbsensiMatrix() {
   const [leaveMap, setLeaveMap] = useState<Map<string, LeaveInfo>>(new Map())
   const [permissionSet, setPermissionSet] = useState<Set<string>>(new Set())
   const [quotaMap, setQuotaMap] = useState<Map<string, number>>(new Map())
+  
+  // STATE HARI LIBUR (Diambil dari Database)
+  const [holidayMap, setHolidayMap] = useState<Record<string, string>>({})
 
   // =========================================================================
   // 1. FETCH DATA
@@ -188,7 +132,29 @@ export default function RekapAbsensiMatrix() {
         .select('user_id, annual_quota, used_leave')
         .eq('year', year)
 
-      // --- PROCESS DATA ---
+      // 6. FETCH HOLIDAYS DARI DATABASE (DYNAMIC)
+      // Mengambil data libur sesuai range bulan yang dipilih
+      const { data: dbHolidays, error: errHoliday } = await supabase
+        .from('public_holidays')
+        .select('date, description')
+        .gte('date', startDateStr)
+        .lte('date', endDateStr)
+
+      if (errHoliday) {
+        console.warn("Gagal mengambil data libur (Mungkin tabel belum dibuat):", errHoliday.message)
+      }
+
+      // Format data libur menjadi Map: { '2025-01-01': 'Tahun Baru', ... }
+      const newHolidayMap: Record<string, string> = {}
+      if (dbHolidays) {
+        dbHolidays.forEach((h: any) => {
+          newHolidayMap[h.date] = h.description
+        })
+      }
+      setHolidayMap(newHolidayMap)
+
+
+      // --- PROCESS DATA LAINNYA ---
       const tempAttMap = new Map<string, AttendanceInfo[]>()
       dataAtt?.forEach(a => {
         const key = `${a.user_id}_${a.attendance_date}`
@@ -246,7 +212,7 @@ export default function RekapAbsensiMatrix() {
   }, [month, year])
 
   // =========================================================================
-  // 2. CORE LOGIC (DENGAN TANGGAL MERAH PRIORITAS UTAMA)
+  // 2. CORE LOGIC
   // =========================================================================
   const matrixData = useMemo(() => {
     let filteredProfiles = profiles
@@ -271,8 +237,8 @@ export default function RekapAbsensiMatrix() {
         const dateStr = format(dateObj, 'yyyy-MM-dd')
         const key = `${profile.id}_${dateStr}`
         
-        // LOGIC PENENTUAN HARI LIBUR / WEEKEND
-        const holidayName = PUBLIC_HOLIDAYS[dateStr] 
+        // --- CEK APAKAH HARI LIBUR / WEEKEND (Menggunakan Data Database) ---
+        const holidayName = holidayMap[dateStr] 
         const isWeekend = isSunday(dateObj) || isSaturday(dateObj)
         const isOffDay = isWeekend || !!holidayName 
         
@@ -280,24 +246,8 @@ export default function RekapAbsensiMatrix() {
         let color = 'bg-white'
         let tooltip = ''
 
-        // --- URUTAN LOGIKA BARU (LIBUR MENANG DULUAN) ---
-        
-        // 1. PRIORITAS UTAMA: TANGGAL MERAH / CUTI BERSAMA
-        // Jika tanggal merah, TAMPILKAN 'L' (Libur), abaikan absensi dummy atau cuti di tanggal ini
-        if (holidayName) {
-            code = 'L';
-            color = 'bg-red-600 text-white font-bold'; 
-            tooltip = `LIBUR NASIONAL: ${holidayName}`;
-        }
-        // 2. PRIORITAS KEDUA: WEEKEND (SABTU MINGGU)
-        // Jika weekend, TAMPILKAN '-' (Merah Polos), abaikan absensi dummy
-        else if (isWeekend) { 
-            code = '-'; 
-            color = 'bg-red-500 text-white'; 
-            tooltip = 'Akhir Pekan (Sabtu/Minggu)';
-        }
-        // 3. BARU CEK KEHADIRAN (Hanya di hari kerja)
-        else if (attendanceMap.has(key)) {
+        // 1. ABSEN MASUK (Prioritas Tertinggi)
+        if (attendanceMap.has(key)) {
             const shifts = attendanceMap.get(key) || []
             let lateCount = 0 
             shifts.forEach(s => {
@@ -317,18 +267,32 @@ export default function RekapAbsensiMatrix() {
             }
             stats.H += 1; stats.Sft += shifts.length; stats.T += lateCount;
         }
-        // 4. CUTI (Hanya muncul jika bukan hari libur/weekend)
-        else if (leaveMap.has(key)) {
+        
+        // 2. CUTI (Hanya dihitung jika HARI KERJA)
+        else if (leaveMap.has(key) && !isOffDay) {
             const info = leaveMap.get(key)!
             if (info.half_day) { code = '½'; color = 'bg-purple-200 text-purple-800'; tooltip = 'Cuti Setengah Hari'; stats.Half++ }
             else if (info.type.toLowerCase().includes('sakit')) { code = 'S'; color = 'bg-orange-200 text-orange-800'; tooltip = `Sakit: ${info.type}`; stats.S++ }
             else { code = 'C'; color = 'bg-blue-200 text-blue-800'; tooltip = `Cuti: ${info.type}`; stats.C++ }
         }
+
+        // 3. TANGGAL MERAH (Data Database)
+        else if (holidayName) {
+            code = 'L';
+            color = 'bg-red-600 text-white font-bold'; 
+            tooltip = `LIBUR: ${holidayName}`;
+        }
+        // 4. WEEKEND
+        else if (isWeekend) { 
+            code = '-'; 
+            color = 'bg-red-500 text-white'; 
+            tooltip = 'Akhir Pekan (Sabtu/Minggu)';
+        }
         // 5. IZIN
         else if (permissionSet.has(key)) { 
             code = 'I'; color = 'bg-yellow-200 text-yellow-800'; tooltip = 'Izin (Disetujui)'; stats.I++ 
         }
-        // 6. ALPHA (Hanya jika hari kerja & sudah lewat)
+        // 6. ALPHA
         else if (isAfter(today, dateObj)) { 
             code = 'A'; color = 'bg-red-50 text-red-600 font-bold'; tooltip = 'Alpha / Tanpa Keterangan'; stats.A++ 
         }
@@ -341,7 +305,7 @@ export default function RekapAbsensiMatrix() {
 
       return { no: index + 1, profile, days: rowData, stats, remainingLeave }
     })
-  }, [profiles, attendanceMap, leaveMap, permissionSet, quotaMap, month, year, searchName])
+  }, [profiles, attendanceMap, leaveMap, permissionSet, quotaMap, month, year, searchName, holidayMap])
 
   // =========================================================================
   // 3. EXPORT TO EXCEL
@@ -405,15 +369,14 @@ export default function RekapAbsensiMatrix() {
         let cellStyle = { ...baseStyle, alignment: { horizontal: "center" } }
         let val = day.code === '-' ? '' : day.code
 
-        // Logic Warna di Excel (SINKRON DENGAN TAMPILAN)
-        if (day.code === 'L') { // Libur Nasional
-             cellStyle = { ...cellStyle, ...styles['L'] }
-        } else if (day.isHoliday) { // Weekend
+        // Logic Warna di Excel
+        if (styles[val]) {
+             cellStyle = { ...cellStyle, ...styles[val] }
+        } else if (day.isHoliday) { 
              cellStyle = { ...cellStyle, ...styles['WEEKEND'] }
              if (val === '') val = ''
-        } else if (styles[val]) {
-             cellStyle = { ...cellStyle, ...styles[val] }
-        }
+        } 
+        
         rowCells.push({ v: val, s: cellStyle })
       })
 
@@ -540,12 +503,14 @@ export default function RekapAbsensiMatrix() {
                         {dateHeaders.map(d => {
                              const dateCheck = new Date(year, month, d)
                              const dateStr = format(dateCheck, 'yyyy-MM-dd')
-                             const isLiburNasional = !!PUBLIC_HOLIDAYS[dateStr]
+                             // Mengambil nama libur dari holidayMap (Gabungan Statis & DB)
+                             const holidayName = holidayMap[dateStr]
                              const isWeekend = isSunday(dateCheck) || isSaturday(dateCheck)
+                             const isLibur = !!holidayName
                              
                              // Header merah jika Libur Nasional atau Weekend
-                             const bgClass = (isLiburNasional || isWeekend) ? 'bg-red-500 text-white' : ''
-                             return <th key={d} className={`border border-gray-300 w-8 h-8 ${bgClass}`} title={isLiburNasional ? PUBLIC_HOLIDAYS[dateStr] : ''}>{d}</th>
+                             const bgClass = (isLibur || isWeekend) ? 'bg-red-500 text-white' : ''
+                             return <th key={d} className={`border border-gray-300 w-8 h-8 ${bgClass}`} title={holidayName}>{d}</th>
                         })}
                         <th className="border border-gray-300 w-10 bg-green-100 text-green-700" title="Total Hari Hadir (Max 30)">H</th>
                         <th className="border border-gray-300 w-10 bg-green-200 text-green-800" title="Total Shift Hadir (Bisa >30)">Sft</th>
