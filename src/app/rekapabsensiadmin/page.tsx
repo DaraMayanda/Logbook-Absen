@@ -330,25 +330,64 @@ export default function RekapAbsensiMatrix() {
             else { code = 'C'; color = 'bg-blue-200 text-blue-800'; tooltip = `Cuti: ${info.type}`; stats.C++ }
         }
         else if (attendanceMap.has(key)) {
-            const shifts = attendanceMap.get(key) || []
-            let lateCount = 0 
-            shifts.forEach(s => {
-                const checkInDate = new Date(s.checkIn)
-                const totalMinutes = checkInDate.getHours() * 60 + checkInDate.getMinutes()
-                if (s.shift.toLowerCase() === 'pagi' && totalMinutes > 8 * 60) lateCount++
-                if (s.shift.toLowerCase() === 'malam' && totalMinutes > 19 * 60) lateCount++
-            })
+  const shifts = attendanceMap.get(key) || [];
+  let dayLateCount = 0;
+  
+  // Ambil posisi dari profile user saat ini
+  const userPos = profile.position?.toUpperCase() || '';
 
-            if (shifts.length > 1) {
-                if (lateCount === 1) { code = '2T¹'; color = 'bg-yellow-600 text-white font-bold'; tooltip = 'Hadir 2 Shift (1 Telat)'; }
-                else if (lateCount >= 2) { code = '2T²'; color = 'bg-yellow-700 text-white font-bold'; tooltip = 'Hadir 2 Shift (2 Telat)'; }
-                else { code = '2x'; color = 'bg-green-600 text-white font-bold'; tooltip = 'Hadir 2 Shift'; }
-            } else {
-                if (lateCount > 0) { code = 'T'; color = 'bg-yellow-500 text-white font-bold'; tooltip = 'Hadir (Terlambat)'; }
-                else { code = 'H'; color = 'bg-green-200 text-green-800 border-green-300'; tooltip = 'Hadir Tepat Waktu'; }
-            }
-            stats.H += 1; stats.Sft += shifts.length; stats.T += lateCount;
-        }
+  shifts.forEach(s => {
+    // Gunakan s.check_in (sesuai database)
+    const checkInDate = new Date(s.checkIn || s.checkIn); 
+    const hours = checkInDate.getHours();
+    const minutes = checkInDate.getMinutes();
+    const totalMinutes = hours * 60 + minutes;
+
+    let lockHour, lockMin;
+
+    // --- SELARASKAN DENGAN CHECK-IN PAGE ---
+    if ((s.shift || '').toLowerCase().includes('pagi')) {
+      if (userPos.includes('SATPAM')) {
+        [lockHour, lockMin] = [7, 5]; // 07:05
+      } else if (userPos.includes('CS')) {
+        [lockHour, lockMin] = [7, 30]; // 07:30
+      } else {
+        [lockHour, lockMin] = [8, 0]; // Umum/Supir/PPNP
+      }
+    } else {
+      // Shift Malam
+      if (userPos.includes('SATPAM')) {
+        [lockHour, lockMin] = [18, 5]; // 18:05
+      } else {
+        [lockHour, lockMin] = [19, 0]; // Umum Malam
+      }
+    }
+
+    const limitMinutes = lockHour * 60 + lockMin;
+    if (totalMinutes > limitMinutes) dayLateCount++;
+  });
+
+  // --- PENENTUAN KODE ---
+  if (shifts.length > 1) {
+    if (dayLateCount === 1) { 
+      code = '2T¹'; color = 'bg-yellow-600 text-white font-bold'; tooltip = '2 Shift (1 Telat)'; 
+    } else if (dayLateCount >= 2) { 
+      code = '2T²'; color = 'bg-orange-700 text-white font-bold'; tooltip = '2 Shift (2 Telat)'; 
+    } else { 
+      code = '2x'; color = 'bg-green-600 text-white font-bold'; tooltip = 'Hadir 2 Shift'; 
+    }
+  } else {
+    if (dayLateCount > 0) { 
+      code = 'T'; color = 'bg-yellow-500 text-white font-bold'; tooltip = 'Terlambat'; 
+    } else { 
+      code = 'H'; color = 'bg-green-200 text-green-800 border-green-300'; tooltip = 'Hadir Tepat Waktu'; 
+    }
+  }
+  
+  stats.H += 1; 
+  stats.Sft += shifts.length; 
+  stats.T += dayLateCount;
+}
         else if (holidayName) {
             code = 'L'; color = 'bg-red-600 text-white font-bold'; tooltip = `LIBUR NASIONAL: ${holidayName}`;
         }

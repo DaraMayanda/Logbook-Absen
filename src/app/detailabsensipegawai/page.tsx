@@ -249,40 +249,37 @@ export default function DetailAbsensiPegawaiPage() {
                     let isLate = false;
 
                     if (att.check_in) {
-                        const checkInTime = dayjs(att.check_in)
-                        let targetHour = 8;
-                        let targetMinute = 0;
+                        const checkInTime = dayjs(att.check_in);
+const userPos = profile.position?.toUpperCase() || '';
+let lockHour = 8;
+let lockMin = 0;
 
-                        if (att.shift_start) {
-                            if (att.shift_start.includes('T') || att.shift_start.length > 10) {
-                                const d = dayjs(att.shift_start);
-                                targetHour = d.hour();
-                                targetMinute = d.minute();
-                            } else {
-                                const parts = att.shift_start.split(':');
-                                targetHour = parseInt(parts[0]) || 0;
-                                targetMinute = parseInt(parts[1]) || 0;
-                            }
-                        } else {
-                            const isMalam = (att.shift || '').toLowerCase().includes('malam');
-                            targetHour = isMalam ? 19 : 8;
-                        }
+// Samakan persis dengan logika di Halaman Absen
+if ((att.shift || '').toLowerCase().includes('pagi')) {
+    if (userPos.includes('SATPAM')) {
+        [lockHour, lockMin] = [7, 5]; 
+    } else if (userPos.includes('CS')) {
+        [lockHour, lockMin] = [7, 30];
+    } else {
+        [lockHour, lockMin] = [8, 0];
+    }
+} else {
+    // Shift Malam
+    if (userPos.includes('SATPAM')) {
+        [lockHour, lockMin] = [18, 5];
+    } else {
+        [lockHour, lockMin] = [19, 0];
+    }
+}
 
-                        const shiftStart = checkInTime
-                            .hour(targetHour)
-                            .minute(targetMinute)
-                            .second(0)
-                            .millisecond(0);
+const shiftLimit = checkInTime.hour(lockHour).minute(lockMin).second(0);
 
-                        // Toleransi 10 menit
-                        const limit = shiftStart.add(10, 'minute');
-
-                        if (checkInTime.isAfter(limit)) {
-                            lateMins = checkInTime.diff(limit, 'minute');
-                            isLate = true;
-                            totalLateCount++;
-                            newStats.totalLateMinutes += lateMins;
-                        }
+if (checkInTime.isAfter(shiftLimit)) {
+    lateMins = checkInTime.diff(shiftLimit, 'minute');
+    isLate = true;
+    totalLateCount++;
+    newStats.totalLateMinutes += lateMins;
+}
                     }
 
                     return {

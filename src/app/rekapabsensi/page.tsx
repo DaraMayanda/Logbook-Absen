@@ -33,6 +33,7 @@ export default function RekapAbsensiPage() {
   const [attendances, setAttendances] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [userPos, setUserPos] = useState<string>('')
 
   // --- FILTER STATE ---
   const [filterType, setFilterType] = useState<'monthly' | 'custom'>('monthly')
@@ -56,7 +57,17 @@ export default function RekapAbsensiPage() {
         return
       }
 
-      // Tentukan Range Tanggal
+      // --- 1. AMBIL DATA PROFILE ---
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('position')
+        .eq('id', user.id)
+        .single()
+
+      const currentPos = (profile?.position || '').toUpperCase()
+      setUserPos(currentPos) 
+
+      // --- 2. TENTUKAN RANGE TANGGAL ---
       let startStr = ''
       let endStr = ''
 
@@ -66,37 +77,21 @@ export default function RekapAbsensiPage() {
         startStr = format(start, 'yyyy-MM-dd')
         endStr = format(end, 'yyyy-MM-dd')
       } else {
-        // Jika custom range belum diisi lengkap, jangan fetch dulu atau fetch semua (opsional)
         if (!startDate || !endDate) {
-             // Opsional: fetch default bulan ini jika kosong
-             const start = startOfMonth(new Date())
-             const end = endOfMonth(new Date())
-             startStr = format(start, 'yyyy-MM-dd')
-             endStr = format(end, 'yyyy-MM-dd')
+          const start = startOfMonth(new Date())
+          const end = endOfMonth(new Date())
+          startStr = format(start, 'yyyy-MM-dd')
+          endStr = format(end, 'yyyy-MM-dd')
         } else {
-            startStr = startDate
-            endStr = endDate
+          startStr = startDate
+          endStr = endDate
         }
       }
 
+      // --- 3. QUERY DATA ABSEN ---
       let query = supabase
         .from('attendances')
-        .select(`
-          id,
-          attendance_date,
-          shift,
-          shift_start,
-          check_in,
-          check_in_location,
-          check_in_latitude,
-          check_in_longitude,
-          check_in_distance_m,
-          check_out,
-          check_out_location,
-          check_out_latitude,
-          check_out_longitude,
-          check_out_distance_m
-        `)
+        .select('*')
         .eq('user_id', user.id)
         .gte('attendance_date', startStr)
         .lte('attendance_date', endStr)
@@ -105,24 +100,39 @@ export default function RekapAbsensiPage() {
 
       const { data, error } = await query
       if (error) {
-        console.error(error)
         toast.error('Gagal mengambil data absensi')
         setLoading(false)
         return
       }
 
-      // Hitung status berdasarkan jam masuk dan shift_start
+      // --- 4. HITUNG STATUS BERDASARKAN ATURAN JABATAN ---
       const processed = (data || []).map((att) => {
         if (!att.check_in) return { ...att, computedStatus: 'Tidak Hadir' }
 
-        const shiftStart = dayjs(att.shift_start)
-        const checkIn = dayjs(att.check_in)
-        const toleranceMinutes = 10
-        const limit = shiftStart.add(toleranceMinutes, 'minute')
+        const checkInTime = dayjs(att.check_in)
+        const totalMinutes = checkInTime.hour() * 60 + checkInTime.minute()
 
-        const computedStatus = checkIn.isAfter(limit)
-          ? 'Terlambat'
-          : 'Tepat Waktu'
+        let limitHour, limitMin
+
+        if ((att.shift || '').toLowerCase().includes('pagi')) {
+          if (currentPos.includes('SATPAM')) {
+            [limitHour, limitMin] = [7, 5] // 07:05
+          } else if (currentPos.includes('CS')) {
+            [limitHour, limitMin] = [7, 30] // 07:30
+          } else {
+            [limitHour, limitMin] = [8, 0] // Umum/PPNP
+          }
+        } else {
+          // Shift Malam
+          if (currentPos.includes('SATPAM')) {
+            [limitHour, limitMin] = [18, 5] // 18:05
+          } else {
+            [limitHour, limitMin] = [19, 0] // Malam Umum
+          }
+        }
+
+        const limitInMinutes = limitHour * 60 + limitMin
+        const computedStatus = totalMinutes > limitInMinutes ? 'Terlambat' : 'Tepat Waktu'
 
         return { ...att, computedStatus }
       })
@@ -134,7 +144,7 @@ export default function RekapAbsensiPage() {
     fetchData()
   }, [filterType, month, year, startDate, endDate])
 
-  // 🔢 Statistik Kehadiran
+  // Statistik Kehadiran
   const stats = useMemo(() => {
     const uniqueDates = new Set(attendances.map((a) => a.attendance_date))
     const counts = { TepatWaktu: 0, Terlambat: 0, TidakHadir: 0 }
@@ -192,7 +202,6 @@ export default function RekapAbsensiPage() {
             <Filter className="w-4 h-4"/> FILTER PERIODE
           </h2>
 
-          {/* Toggle Filter Type */}
           <div className="flex bg-gray-100 p-1 rounded-lg mb-4">
              <button 
                 onClick={() => setFilterType('monthly')}
@@ -208,7 +217,6 @@ export default function RekapAbsensiPage() {
              </button>
           </div>
 
-          {/* Input Area */}
           {filterType === 'monthly' ? (
              <div className="flex gap-2">
                 <div className="relative w-full">
@@ -288,7 +296,11 @@ export default function RekapAbsensiPage() {
                     <div>
                         <p className="font-bold text-gray-800 text-base">{formatDateUI(att.attendance_date)}</p>
                         <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded mt-1 inline-block uppercase font-semibold">
-                            Shift: {att.shift}
+                          Shift: {att.shift} 
+                          {att.shift.toLowerCase().includes('pagi') 
+                            ? ` (Batas: ${userPos.includes('SATPAM') ? '07:05' : userPos.includes('CS') ? '07:30' : '08:00'})`
+                            : ` (Batas: ${userPos.includes('SATPAM') ? '18:05' : '19:00'})`
+                          }
                         </span>
                     </div>
                     <StatusBadge status={att.computedStatus} />
@@ -327,7 +339,6 @@ export default function RekapAbsensiPage() {
           )}
         </section>
 
-        {/* Tombol Kembali */}
         {mounted && (
           <div className="mt-8 pb-4">
             <button onClick={() => router.push('/dashboard')}
