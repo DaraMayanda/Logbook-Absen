@@ -101,53 +101,66 @@ export default function PengajuanIzinPage() {
   useEffect(() => { fetchIzinRequests() }, [userId])
 
 
-  // =================== SUBMIT PENGAJUAN ===================
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!jenisIzin || !tanggalMulai || !tanggalSelesai || !alasan)
-      return toast.error('Semua field wajib diisi')
-    if (halfDay && !halfDayShift)
-       return toast.error('Silakan pilih Shift (Pagi/Malam) untuk izin setengah hari')
-    if (!userId) return toast.error('User belum terdeteksi')
+ // =================== SUBMIT PENGAJUAN ===================
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault()
+  if (!jenisIzin || !tanggalMulai || !tanggalSelesai || !alasan)
+    return toast.error('Semua field wajib diisi')
+  if (halfDay && !halfDayShift)
+    return toast.error('Silakan pilih Shift (Pagi/Malam) untuk izin setengah hari')
+  if (!userId) return toast.error('User belum terdeteksi')
 
-    setLoading(true)
+  // --- VALIDASI UKURAN FILE (2MB) ---
+  const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB dalam bytes
+  if (lampiran && lampiran.size > MAX_FILE_SIZE) {
+    return toast.error('Ukuran lampiran terlalu besar! Maksimal 2MB.');
+  }
 
-    try {
-      // 1. Upload lampiran jika ada
-      let lampiranUrl: string | null = null
-      if (lampiran) {
-        const loadingToast = toast.loading('Mengupload lampiran...');
-        const fileExt = lampiran.name.split('.').pop()
-        const fileName = `${Date.now()}_${userId}.${fileExt}`
-        const filePath = `izin_lampiran/${fileName}`
+  setLoading(true)
 
-        const { error: uploadError } = await supabase.storage
-          .from('lampiran_izin')
-          .upload(filePath, lampiran);
+  try {
+    // 1. Upload lampiran jika ada
+    let lampiranUrl: string | null = null
+    if (lampiran) {
+      const loadingToast = toast.loading('Mengupload lampiran...');
+      
+      // Bersihkan nama file dari karakter aneh agar tidak error di storage
+      const fileExt = lampiran.name.split('.').pop()
+      const cleanFileName = `${Date.now()}_${userId}.${fileExt}`
+      const filePath = `izin_lampiran/${cleanFileName}`
 
-        if (uploadError) throw uploadError
+      const { error: uploadError } = await supabase.storage
+        .from('lampiran_izin')
+        .upload(filePath, lampiran, {
+          cacheControl: '3600',
+          upsert: false
+        });
 
-        const { data: publicUrl } = supabase.storage
-          .from('lampiran_izin')
-          .getPublicUrl(filePath)
+      if (uploadError) throw uploadError
 
-        lampiranUrl = publicUrl.publicUrl
-        toast.dismiss(loadingToast);
-      }
+      const { data: publicUrl } = supabase.storage
+        .from('lampiran_izin')
+        .getPublicUrl(filePath)
 
-      // 2. Panggil RPC (Pastikan function di database sudah support parameter baru)
-      const { data, error: rpcError } = await supabase.rpc('submit_permission_request', {
-        p_user_id: userId,
-        p_jenis_izin: jenisIzin,
-        p_tanggal_mulai: tanggalMulai,
-        p_tanggal_selesai: tanggalSelesai,
-        p_alasan: alasan,
-        p_lampiran_url: lampiranUrl,
-        p_half_day: halfDay,              // Kirim status setengah hari
-        p_half_day_shift: halfDayShift || null // Kirim shift (pagi/malam)
-      })
+      lampiranUrl = publicUrl.publicUrl
+      toast.dismiss(loadingToast);
+    }
 
-      if (rpcError) throw rpcError; 
+    // 2. Panggil RPC (Sama seperti sebelumnya)
+    const { data, error: rpcError } = await supabase.rpc('submit_permission_request', {
+      p_user_id: userId,
+      p_jenis_izin: jenisIzin,
+      p_tanggal_mulai: tanggalMulai,
+      p_tanggal_selesai: tanggalSelesai,
+      p_alasan: alasan,
+      p_lampiran_url: lampiranUrl,
+      p_half_day: halfDay,
+      p_half_day_shift: halfDayShift || null
+    })
+
+    if (rpcError) throw rpcError; 
+    
+    // ... sisa kode reset form dan toast success
       
       const rpcData = data?.[0];
 
@@ -270,23 +283,32 @@ export default function PengajuanIzinPage() {
             </div>
 
             {/* Lampiran */}
-            <div>
-              <label className="font-medium">Lampiran (Opsional)</label>
-              <input
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png"
-                onChange={(e) => setLampiran(e.target.files?.[0] || null)}
-                className="w-full text-sm text-gray-500
-                  file:mr-4 file:py-2 file:px-4
-                  file:rounded-md file:border-0
-                  file:text-sm file:font-semibold
-                  file:bg-blue-50 file:text-blue-700
-                  hover:file:bg-blue-100"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Upload bukti (jika ada). Misal: Surat Sakit, Surat Tugas Dinas, dll.
-              </p>
-            </div>
+<div>
+  <label className="font-medium">Lampiran (Opsional)</label>
+  <input
+    type="file"
+    accept=".pdf,.jpg,.jpeg,.png"
+    onChange={(e) => {
+      const file = e.target.files?.[0] || null;
+      if (file && file.size > 2 * 1024 * 1024) {
+        toast.error('File terlalu besar (Maks 2MB)');
+        e.target.value = ''; // Reset input
+        setLampiran(null);
+      } else {
+        setLampiran(file);
+      }
+    }}
+    className="w-full text-sm text-gray-500
+      file:mr-4 file:py-2 file:px-4
+      file:rounded-md file:border-0
+      file:text-sm file:font-semibold
+      file:bg-blue-50 file:text-blue-700
+      hover:file:bg-blue-100"
+  />
+  <p className="text-xs text-gray-500 mt-1">
+    Format: PDF, JPG, PNG (Maksimal 2MB).
+  </p>
+</div>
 
             <button type="submit"
                     className="w-full bg-blue-700 text-white p-2 rounded-md hover:bg-blue-800 transition flex items-center justify-center"

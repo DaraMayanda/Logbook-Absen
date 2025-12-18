@@ -62,7 +62,6 @@ export default function CheckInPage() {
         const lon = pos.coords.longitude;
         setLocation({ lat, lon });
 
-        // Hitung jarak Haversine
         const R = 6371e3;
         const φ1 = OFFICE_LOCATION.latitude * Math.PI / 180;
         const φ2 = lat * Math.PI / 180;
@@ -86,45 +85,43 @@ export default function CheckInPage() {
         else setLocationStatus('Di luar radius kantor');
       },
       (error) => {
-        if (error.code === error.PERMISSION_DENIED) setLocationStatus('Akses lokasi ditolak.');
-        else setLocationStatus('Gagal mendapatkan lokasi.');
+        setLocationStatus('Gagal mendapatkan lokasi.');
       }
     );
   };
 
   useEffect(() => { fetchLocation(); }, []);
 
-  const formattedTime = currentTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  // Menambahkan detik agar user bisa memantau waktu dengan tepat
+  const formattedTime = currentTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const formattedDate = currentTime.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   // --- Ambil user ID saat login ---
   useEffect(() => {
     const fetchUser = async () => {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (error || !user) return;
-      setUserId(user.id);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) setUserId(user.id);
     };
     fetchUser();
   }, []);
 
-  // --- Cek apakah user sudah absen hari ini untuk shift ini ---
+  // --- Cek apakah user sudah absen hari ini ---
   useEffect(() => {
     const checkAttendance = async () => {
       if (!userId) return;
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('attendances')
         .select('id')
         .eq('user_id', userId)
         .eq('attendance_date', todayDate)
         .eq('shift', shift)
         .maybeSingle();
-      if (error) console.error('Supabase check attendance error:', error);
       setCanCheckIn(!data);
     };
     checkAttendance();
   }, [todayDate, shift, userId]);
 
-  // --- HANDLE CHECK-IN ---
+  // --- HANDLE CHECK-IN REVISI ---
   const handleCheckIn = async () => {
     if (!location) return toast.error('Lokasi belum terdeteksi.');
 
@@ -138,50 +135,46 @@ export default function CheckInPage() {
     try {
       if (!userId) throw new Error('Anda belum login.');
 
-      // 1. Ambil profile untuk cek posisi (CS atau bukan)
       const { data: profileCheck } = await supabase
         .from('profiles')
         .select('id, position')
         .eq('id', userId)
         .single();
 
-      if (!profileCheck) {
-        // Jika belum ada profile, buat default
-        await supabase.from('profiles').insert([
-          { id: userId, full_name: '', position: 'PPNPN', role: 'pegawai' },
-        ]);
-      }
-
-      const now = new Date();
-      let lockTime = '08:00:00'; // Default untuk PNPM/Admin/Supir
       const userPos = profileCheck?.position?.toUpperCase() || '';
+      const now = new Date();
+      let lockTime = '08:00:00'; 
 
-      // 2. Tentukan Jam Kunci Masuk (Fleksi 1 Jam)
+      // Logika Kunci Jam
       if (shift === 'pagi') {
-        if (userPos.includes('CS')) {
-          lockTime = '07:30:00'; // CS masuk 6.30 + fleksi 1 jam
+        if (userPos.includes('SATPAM')) {
+          lockTime = '07:05:00'; // Satpam Pagi: 7.00 + 5 mnt
+        } else if (userPos.includes('CS')) {
+          lockTime = '07:30:00'; // CS: 6.30 + 1 jam
         } else {
-          lockTime = '08:00:00'; // Umum masuk 7.00 + fleksi 1 jam
+          lockTime = '08:00:00'; // Umum: 7.00 + 1 jam
         }
       } else {
-        lockTime = '19:00:00'; // Malam masuk 18.00 + fleksi 1 jam
+        if (userPos.includes('SATPAM')) {
+          lockTime = '18:05:00'; // Satpam Malam: 18.00 + 5 mnt
+        } else {
+          lockTime = '19:00:00'; // Malam Lainnya: 18.00 + 1 jam
+        }
       }
 
       const shiftStart = new Date(todayDate + 'T' + lockTime);
-      
-      // 3. Status Absen (Hanya kunci jam MASUK)
       const statusAbsen = now > shiftStart ? 'Terlambat' : 'Hadir';
 
-      // 4. Simpan ke Database
       const { data: attendanceData, error: attendanceError } = await supabase
         .from('attendances')
         .insert([{
           user_id: userId,
           attendance_date: todayDate,
           shift,
-          // Jam pulang tidak dikunci ketat, kita set default jam 5/6 sore tapi tidak dipakai validasi
           shift_start: shiftStart.toISOString(),
-          shift_end: shift === 'pagi' ? new Date(todayDate + 'T17:30:00').toISOString() : new Date(new Date(todayDate).getTime() + 86400000 + 7 * 3600000).toISOString(),
+          shift_end: shift === 'pagi' 
+            ? new Date(todayDate + 'T17:30:00').toISOString() 
+            : new Date(new Date(todayDate).getTime() + 86400000 + 7 * 3600000).toISOString(),
           check_in: now.toISOString(),
           status: statusAbsen,
           check_in_location: address,
@@ -194,7 +187,6 @@ export default function CheckInPage() {
 
       if (attendanceError) throw attendanceError;
 
-      // 5. Buat logbook awal
       await supabase.from('logbooks').insert([{
         user_id: userId,
         attendance_id: attendanceData.id,
@@ -208,12 +200,12 @@ export default function CheckInPage() {
       setCanCheckIn(false);
       router.replace('/dashboard');
     } catch (err: any) {
-      console.error('Error:', err);
       toast.error(err?.message || 'Gagal menyimpan absen.');
     } finally {
       setIsSubmitting(false);
     }
   };
+
   return (
     <div className="min-h-screen bg-gray-50 font-sans">
       <header className="bg-blue-900 text-white p-4 shadow-lg flex items-center">
@@ -254,16 +246,9 @@ export default function CheckInPage() {
             </p>
           )}
           <p className="mt-2 text-sm text-gray-600">
-            <b>Alamat Saat Ini:</b><br />{address}
+            <b>Alamat:</b><br />{address}
           </p>
-          <p className="mt-2 text-xs text-gray-400">
-            Koordinat: {location ? `${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}` : '...'}
-          </p>
-
-          <button
-            onClick={fetchLocation}
-            className="mt-3 bg-blue-900 hover:bg-blue-800 text-white text-sm font-semibold py-2 px-3 rounded-lg"
-          >
+          <button onClick={fetchLocation} className="mt-3 bg-blue-900 text-white text-sm py-2 px-3 rounded-lg">
             Ambil Ulang Lokasi
           </button>
         </div>
@@ -272,22 +257,11 @@ export default function CheckInPage() {
           onClick={handleCheckIn}
           disabled={isSubmitting || !canCheckIn}
           className={`w-full py-4 text-white font-extrabold rounded-xl transition duration-300 shadow-xl ${
-            isSubmitting || !canCheckIn
-              ? 'bg-gray-400 cursor-not-allowed'
-              : 'bg-blue-900 hover:bg-blue-800 shadow-blue-500/50'
+            isSubmitting || !canCheckIn ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-900 hover:bg-blue-800'
           }`}
         >
-          {isSubmitting
-            ? 'Memproses...'
-            : !canCheckIn
-            ? `Sudah absen shift ${shift}`
-            : 'SUBMIT ABSEN MASUK'}
+          {isSubmitting ? 'Memproses...' : !canCheckIn ? `Sudah absen shift ${shift}` : 'SUBMIT ABSEN MASUK'}
         </button>
-
-        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 text-center">
-          <p className="font-semibold text-blue-900 mb-1">Catatan:</p>
-          <p>Absen valid jika dalam radius 500 meter dari kantor. Tombol akan aktif kembali besok untuk shift yang sama.</p>
-        </div>
       </main>
     </div>
   );
