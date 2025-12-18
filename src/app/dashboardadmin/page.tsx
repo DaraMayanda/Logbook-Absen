@@ -200,7 +200,7 @@ export default function DashboardAdmin() {
             {/* --- MENU BARU: Detail Absensi Individu --- */}
             <MenuCard 
                 icon={Search} 
-                title="Detail Absensi Pegawai" 
+                title="Detail Absensi PPNPN & CS " 
                 description="Cek riwayat detail, lokasi & jam per orang" 
                 href="/detailabsensipegawai" 
                 // Menggunakan default colorClass (Biru)

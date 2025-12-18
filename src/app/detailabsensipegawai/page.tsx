@@ -479,7 +479,7 @@ export default function DetailAbsensiPegawaiPage() {
     
     // Judul
     const finalData = [
-        [{ v: "REKAPITULASI ABSENSI PEGAWAI", s: { font: { bold: true, sz: 14 } } }],
+        [{ v: "REKAPITULASI ABSENSI PPNPN DAN CS ", s: { font: { bold: true, sz: 14 } } }],
         [{ v: `PERIODE: ${periodStr}`, s: { font: { bold: true } } }],
         [], 
         ...ws_data
@@ -511,7 +511,7 @@ export default function DetailAbsensiPegawaiPage() {
     const doc = new jsPDF('landscape')
 
     doc.setFontSize(14)
-    doc.text("REKAPITULASI ABSENSI PEGAWAI", 14, 15)
+    doc.text("REKAPITULASI ABSENSI PPNPN DAN CS", 14, 15)
     doc.setFontSize(10)
     doc.text(`PERIODE: ${periodStr}`, 14, 22)
 
@@ -579,7 +579,7 @@ export default function DetailAbsensiPegawaiPage() {
               <ArrowLeft className="w-5 h-5"/>
             </button>
             <div>
-              <h1 className="text-xl font-bold text-gray-800">Detail Absensi Pegawai</h1>
+              <h1 className="text-xl font-bold text-gray-800">Detail Absensi PPNPN DAN CS</h1>
               <p className="text-gray-500 text-xs">Monitoring Individu & Harian</p>
             </div>
         </div>

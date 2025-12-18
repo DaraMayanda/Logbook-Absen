@@ -138,38 +138,52 @@ export default function CheckInPage() {
     try {
       if (!userId) throw new Error('Anda belum login.');
 
-      // Pastikan profil user sudah ada
+      // 1. Ambil profile untuk cek posisi (CS atau bukan)
       const { data: profileCheck } = await supabase
         .from('profiles')
-        .select('id')
+        .select('id, position')
         .eq('id', userId)
         .single();
 
       if (!profileCheck) {
+        // Jika belum ada profile, buat default
         await supabase.from('profiles').insert([
           { id: userId, full_name: '', position: 'PPNPN', role: 'pegawai' },
         ]);
       }
 
       const now = new Date();
-      const shiftTimes = shift === 'pagi'
-        ? { start: new Date(todayDate + 'T08:00:00'), end: new Date(todayDate + 'T17:00:00') }
-        : { start: new Date(todayDate + 'T20:00:00'), end: new Date(new Date(todayDate).getTime() + 1 * 24 * 60 * 60 * 1000 + 7 * 60 * 60 * 1000) };
+      let lockTime = '08:00:00'; // Default untuk PNPM/Admin/Supir
+      const userPos = profileCheck?.position?.toUpperCase() || '';
 
-      const statusAbsen = now > shiftTimes.start ? 'Terlambat' : 'Hadir';
+      // 2. Tentukan Jam Kunci Masuk (Fleksi 1 Jam)
+      if (shift === 'pagi') {
+        if (userPos.includes('CS')) {
+          lockTime = '07:30:00'; // CS masuk 6.30 + fleksi 1 jam
+        } else {
+          lockTime = '08:00:00'; // Umum masuk 7.00 + fleksi 1 jam
+        }
+      } else {
+        lockTime = '19:00:00'; // Malam masuk 18.00 + fleksi 1 jam
+      }
 
-      // Simpan ke attendances dengan kolom check_in_*
+      const shiftStart = new Date(todayDate + 'T' + lockTime);
+      
+      // 3. Status Absen (Hanya kunci jam MASUK)
+      const statusAbsen = now > shiftStart ? 'Terlambat' : 'Hadir';
+
+      // 4. Simpan ke Database
       const { data: attendanceData, error: attendanceError } = await supabase
         .from('attendances')
         .insert([{
           user_id: userId,
           attendance_date: todayDate,
           shift,
-          shift_start: shiftTimes.start.toISOString(),
-          shift_end: shiftTimes.end.toISOString(),
+          // Jam pulang tidak dikunci ketat, kita set default jam 5/6 sore tapi tidak dipakai validasi
+          shift_start: shiftStart.toISOString(),
+          shift_end: shift === 'pagi' ? new Date(todayDate + 'T17:30:00').toISOString() : new Date(new Date(todayDate).getTime() + 86400000 + 7 * 3600000).toISOString(),
           check_in: now.toISOString(),
           status: statusAbsen,
-
           check_in_location: address,
           check_in_latitude: location.lat,
           check_in_longitude: location.lon,
@@ -177,10 +191,11 @@ export default function CheckInPage() {
         }])
         .select('id')
         .single();
+
       if (attendanceError) throw attendanceError;
 
-      // Buat logbook awal
-      const { error: logbookError } = await supabase.from('logbooks').insert([{
+      // 5. Buat logbook awal
+      await supabase.from('logbooks').insert([{
         user_id: userId,
         attendance_id: attendanceData.id,
         shift,
@@ -188,19 +203,17 @@ export default function CheckInPage() {
         description: '',
         status: 'IN_PROGRESS',
       }]);
-      if (logbookError) throw logbookError;
 
       toast.success(`Absen ${shift} berhasil (${statusAbsen})`);
       setCanCheckIn(false);
       router.replace('/dashboard');
     } catch (err: any) {
-      console.error('Supabase Error:', err?.message || err);
+      console.error('Error:', err);
       toast.error(err?.message || 'Gagal menyimpan absen.');
     } finally {
       setIsSubmitting(false);
     }
   };
-
   return (
     <div className="min-h-screen bg-gray-50 font-sans">
       <header className="bg-blue-900 text-white p-4 shadow-lg flex items-center">

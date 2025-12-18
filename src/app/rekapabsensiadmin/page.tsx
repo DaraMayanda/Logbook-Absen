@@ -40,6 +40,7 @@ type LeaveInfo = {
 type PermissionInfo = {
   potongGaji: boolean
   halfDay: boolean
+  jenisIzin: string 
 }
 
 type AttendanceInfo = {
@@ -59,7 +60,12 @@ type MatrixRow = {
   remainingLeave: number | null
   days: {
     date: string
-    code: 'H' | '2x' | 'T' | '2T¹' | '2T²' | 'I' | 'IP' | 'IP½' | 'C' | 'S' | 'A' | '½' | 'L' | '-' 
+    code: 
+  | 'H' | '2x' | 'T' | '2T¹' | '2T²'
+  | 'I' | 'IP' | 'IP½'
+  | 'C' | 'S' | 'A' | '½' | 'L' | '-'
+  | 'LAM' | 'LAM(P)' | 'LAP' | 'LAP(P)'
+ 
     color: string
     isHoliday: boolean
     tooltip: string
@@ -130,7 +136,7 @@ export default function RekapAbsensiMatrix() {
       // 4. Fetch Permissions (Disetujui)
       const { data: dataPermits } = await supabase
         .from('permission_requests')
-        .select('user_id, tanggal_mulai, tanggal_selesai, status, potong_gaji, half_day')
+        .select('user_id, tanggal_mulai, tanggal_selesai, status, potong_gaji, half_day, jenis_izin')
         .in('status', ['Disetujui', 'Disetujui Level 1', 'Disetujui Level 2'])
         .or(`tanggal_mulai.lte.${endDateStr},tanggal_selesai.gte.${startDateStr}`)
 
@@ -192,9 +198,11 @@ export default function RekapAbsensiMatrix() {
           range.forEach(date => {
              const key = `${p.user_id}_${format(date, 'yyyy-MM-dd')}`
              tempPermitMap.set(key, { 
-               potongGaji: p.potong_gaji || false,
-               halfDay: p.half_day || false
-             })
+          potongGaji: p.potong_gaji || false,
+          halfDay: p.half_day || false,
+          jenisIzin: p.jenis_izin || ''
+          })
+
           })
         } catch (e) {}
       })
@@ -257,18 +265,64 @@ export default function RekapAbsensiMatrix() {
         let color = 'bg-white'
         let tooltip = ''
 
-        if (permissionMap.has(key)) { 
-            const perm = permissionMap.get(key)!
-            if (perm.potongGaji) {
-                if (perm.halfDay) {
-                    code = 'IP½'; color = 'bg-rose-200 text-rose-800 border-rose-300'; tooltip = 'Izin Potong Gaji (Setengah Hari)'; stats.IP++;
-                } else {
-                    code = 'IP'; color = 'bg-rose-300 text-rose-900 border-rose-400'; tooltip = 'Izin Potong Gaji (Full)'; stats.IP++;
-                }
-            } else {
-                code = 'I'; color = 'bg-yellow-200 text-yellow-800'; tooltip = 'Izin (Tidak Potong Gaji)'; stats.I++;
-            }
-        }
+        if (permissionMap.has(key)) {
+  const perm = permissionMap.get(key)!
+  const izinType = perm.jenisIzin.toUpperCase()
+
+  // =========================
+  // LAM / LAP MENIMPA TERLAMBAT
+  // =========================
+  if (izinType.includes('LUPA ABSEN MASUK')) {
+    if (perm.potongGaji) {
+      code = 'LAM(P)'
+      color = 'bg-emerald-300 text-white-900 font-bold'
+      tooltip = 'Lupa Absen Masuk (Potong Gaji)'
+      stats.IP++
+    } else {
+      code = 'LAM'
+      color = 'bg-pink-200 text-emerald-800 font-bold'
+      tooltip = 'Lupa Absen Masuk (Tidak Potong Gaji)'
+      stats.I++
+    }
+  }
+  else if (izinType.includes('LUPA ABSEN PULANG')) {
+    if (perm.potongGaji) {
+      code = 'LAP(P)'
+      color = 'bg-maroon-300 text-emerald-900 font-bold'
+      tooltip = 'Lupa Absen Pulang (Potong Gaji)'
+      stats.IP++
+    } else {
+      code = 'LAP'
+      color = 'bg-sky-200 text-sky-800 font-bold'
+      tooltip = 'Lupa Absen Pulang (Tidak Potong Gaji)'
+      stats.I++
+    }
+  }
+  // =========================
+  // IZIN NORMAL
+  // =========================
+  else {
+    if (perm.potongGaji) {
+      if (perm.halfDay) {
+        code = 'IP½'
+        color = 'bg-rose-200 text-rose-800 border-rose-300'
+        tooltip = 'Izin Potong Gaji (Setengah Hari)'
+        stats.IP++
+      } else {
+        code = 'IP'
+        color = 'bg-rose-300 text-rose-900 border-rose-400'
+        tooltip = 'Izin Potong Gaji (Full)'
+        stats.IP++
+      }
+    } else {
+      code = 'I'
+      color = 'bg-yellow-200 text-yellow-800'
+      tooltip = 'Izin (Tidak Potong Gaji)'
+      stats.I++
+    }
+  }
+}
+
         else if (leaveMap.has(key)) {
             const info = leaveMap.get(key)!
             if (info.half_day) { code = '½'; color = 'bg-purple-200 text-purple-800'; tooltip = 'Cuti Setengah Hari'; stats.Half++ }
@@ -342,21 +396,49 @@ export default function RekapAbsensiMatrix() {
     }
 
     const styles: Record<string, any> = {
-      'H': { fill: { fgColor: { rgb: "C6EFCE" } }, font: { color: { rgb: "006100" }, bold: true } },
-      '2x': { fill: { fgColor: { rgb: "16A34A" } }, font: { color: { rgb: "FFFFFF" }, bold: true } },
-      'T': { fill: { fgColor: { rgb: "EAB308" } }, font: { color: { rgb: "FFFFFF" }, bold: true } },
-      '2T¹': { fill: { fgColor: { rgb: "CA8A04" } }, font: { color: { rgb: "FFFFFF" }, bold: true } },
-      '2T²': { fill: { fgColor: { rgb: "A16207" } }, font: { color: { rgb: "FFFFFF" }, bold: true } },
-      'C': { fill: { fgColor: { rgb: "BFDBFE" } }, font: { color: { rgb: "1E3A8A" }, bold: true } },
-      'S': { fill: { fgColor: { rgb: "FED7AA" } }, font: { color: { rgb: "9A3412" }, bold: true } },
-      'I': { fill: { fgColor: { rgb: "FEF08A" } }, font: { color: { rgb: "854D0E" }, bold: true } },
-      'IP': { fill: { fgColor: { rgb: "FDA4AF" } }, font: { color: { rgb: "881337" }, bold: true } }, 
-      'IP½': { fill: { fgColor: { rgb: "FECDD3" } }, font: { color: { rgb: "9F1239" }, bold: true } }, 
-      '½': { fill: { fgColor: { rgb: "E9D5FF" } }, font: { color: { rgb: "6B21A8" }, bold: true } },
-      'A': { fill: { fgColor: { rgb: "EF4444" } }, font: { color: { rgb: "FFFFFF" }, bold: true } },
-      'L': { fill: { fgColor: { rgb: "B91C1C" } }, font: { color: { rgb: "FFFFFF" }, bold: true } }, 
-      'WEEKEND': { fill: { fgColor: { rgb: "EF4444" } } },
-    }
+  // --- GRUP UTAMA (SUDAH ADA) ---
+  'H': { fill: { fgColor: { rgb: "C6EFCE" } }, font: { color: { rgb: "006100" }, bold: true } },
+  '2x': { fill: { fgColor: { rgb: "16A34A" } }, font: { color: { rgb: "FFFFFF" }, bold: true } },
+  'T': { fill: { fgColor: { rgb: "EAB308" } }, font: { color: { rgb: "FFFFFF" }, bold: true } },
+  '2T¹': { fill: { fgColor: { rgb: "CA8A04" } }, font: { color: { rgb: "FFFFFF" }, bold: true } },
+  '2T²': { fill: { fgColor: { rgb: "A16207" } }, font: { color: { rgb: "FFFFFF" }, bold: true } },
+  'C': { fill: { fgColor: { rgb: "BFDBFE" } }, font: { color: { rgb: "1E3A8A" }, bold: true } },
+  'S': { fill: { fgColor: { rgb: "FED7AA" } }, font: { color: { rgb: "9A3412" }, bold: true } },
+  'I': { fill: { fgColor: { rgb: "FEF08A" } }, font: { color: { rgb: "854D0E" }, bold: true } },
+  'IP': { fill: { fgColor: { rgb: "FDA4AF" } }, font: { color: { rgb: "881337" }, bold: true } }, 
+  'IP½': { fill: { fgColor: { rgb: "FECDD3" } }, font: { color: { rgb: "9F1239" }, bold: true } }, 
+  '½': { fill: { fgColor: { rgb: "E9D5FF" } }, font: { color: { rgb: "6B21A8" }, bold: true } },
+  'A': { fill: { fgColor: { rgb: "EF4444" } }, font: { color: { rgb: "FFFFFF" }, bold: true } },
+
+  // --- PENYELARASAN 4 STYLE BARU ---
+  // LAM diselaraskan dengan warna Pink (Grup IP) agar tidak terlalu kontras dengan teks putih yang sulit dibaca di background terang
+  'LAM': { 
+    fill: { fgColor: { rgb: "FBCFE8" } }, 
+    font: { color: { rgb: "9D174D" }, bold: true } // Diubah dari putih ke Pink Gelap agar terbaca
+  },
+
+  // LAM(P) menggunakan Emerald/Hijau Teal (Grup H)
+  'LAM(P)': {
+    fill: { fgColor: { rgb: "D1FAE5" } }, 
+    font: { color: { rgb: "065F46" }, bold: true } 
+  },
+
+  // LAP menggunakan Sky Blue (Grup C)
+  'LAP': {
+    fill: { fgColor: { rgb: "E0F2FE" } }, 
+    font: { color: { rgb: "075985" }, bold: true } 
+  },
+
+  // LAP(P) menggunakan Rose/Maroon Soft (Grup IP)
+  'LAP(P)': {
+    fill: { fgColor: { rgb: "FCE7F3" } }, 
+    font: { color: { rgb: "9F1239" }, bold: true } // Diselaraskan dengan tone IP½
+  },
+
+  // --- AKHIR (SUDAH ADA) ---
+  'L': { fill: { fgColor: { rgb: "B91C1C" } }, font: { color: { rgb: "FFFFFF" }, bold: true } }, 
+  'WEEKEND': { fill: { fgColor: { rgb: "EF4444" } } },
+}
 
     const tableHeaderLabel = [
       "No", "Nama Pegawai", "Jabatan", ...daysHeader, 
@@ -402,7 +484,7 @@ export default function RekapAbsensiMatrix() {
       tableBodyRows.push(rowCells)
     })
 
-    const titleRow = [{ v: "REKAP ABSENSI PEGAWAI", s: { font: { sz: 14, bold: true }, alignment: { horizontal: "center" } } }]
+    const titleRow = [{ v: "REKAP ABSENSI PPNPN DAN CS", s: { font: { sz: 14, bold: true }, alignment: { horizontal: "center" } } }]
     const periodRow = [{ v: `PERIODE: ${monthName.toUpperCase()}`, s: { font: { sz: 11, bold: true }, alignment: { horizontal: "center" } } }]
 
     // ================== BAGIAN KETERANGAN (LEGEND) UNTUK EXCEL ==================
@@ -421,6 +503,10 @@ export default function RekapAbsensiMatrix() {
       { code: 'L', desc: 'Libur Nasional', styleKey: 'L' },
       { code: '', desc: 'Akhir Pekan', styleKey: 'WEEKEND' },
       { code: 'A', desc: 'Alpha', styleKey: 'A' },
+      { code: 'LAM', desc: 'Lupa Absen Masuk', styleKey: 'LAM' },
+{ code: 'LAM(P)', desc: 'Lupa Absen Masuk (Potong Gaji)', styleKey: 'LAM(P)' },
+{ code: 'LAP', desc: 'Lupa Absen Pulang', styleKey: 'LAP' },
+{ code: 'LAP(P)', desc: 'Lupa Absen Pulang (Potong Gaji)', styleKey: 'LAP(P)' },
     ];
 
     const legendRows: any[][] = [];
@@ -478,7 +564,7 @@ export default function RekapAbsensiMatrix() {
     
     // Header
     doc.setFontSize(14)
-    doc.text("REKAP ABSENSI PEGAWAI", 14, 15)
+    doc.text("REKAP ABSENSI PPNPN DAN CS ", 14, 15)
     doc.setFontSize(10)
     doc.text(`PERIODE: ${monthName.toUpperCase()}`, 14, 22)
 
@@ -510,22 +596,30 @@ export default function RekapAbsensiMatrix() {
       ]
     })
 
-    // Warna untuk PDF
-    const getCellColor = (code: string, isWeekendOrHoliday: boolean) => {
-      if (code === 'H') return [198, 239, 206] // Green light
-      if (code === '2x') return [22, 163, 74] // Green strong
-      if (code === 'T') return [234, 179, 8] // Yellow
-      if (code.includes('2T')) return [161, 98, 7] // Dark Yellow
-      if (code === 'A') return [239, 68, 68] // Red
-      if (code === 'L') return [185, 28, 28] // Dark Red
-      if (code === 'C') return [191, 219, 254] // Blue
-      if (code === 'S') return [254, 215, 170] // Orange
-      if (code === 'I') return [254, 240, 138] // Light Yellow
-      if (code.startsWith('IP')) return [253, 164, 175] // Rose (IP & IP½)
-      if (code === '½') return [233, 213, 255] // Purple
-      if (isWeekendOrHoliday) return [239, 68, 68] // Red for weekend bg
-      return null
-    }
+   // Warna untuk PDF (format [R, G, B])
+const getCellColor = (code: string, isWeekendOrHoliday: boolean) => {
+  if (code === 'H') return [198, 239, 206]      // Green light (C6EFCE)
+  if (code === '2x') return [22, 163, 74]      // Green strong (16A34A)
+  if (code === 'T') return [234, 179, 8]       // Yellow (EAB308)
+  if (code.includes('2T')) return [202, 138, 4] // Amber/Dark Yellow (CA8A04)
+  if (code === 'A') return [239, 68, 68]       // Red (EF4444)
+  if (code === 'L') return [185, 28, 28]       // Dark Red (B91C1C)
+  if (code === 'C') return [191, 219, 254]     // Blue (BFDBFE)
+  if (code === 'S') return [254, 213, 170]     // Orange (FED7AA)
+  if (code === 'I') return [254, 240, 138]     // Light Yellow (FEF08A)
+  if (code.startsWith('IP')) return [253, 164, 175] // Rose (FDA4AF)
+  if (code === '½') return [233, 213, 255]     // Purple (E9D5FF)
+
+  // --- PENYELARASAN 4 KODE BARU (Mengikuti Fill Color sebelumnya) ---
+  if (code === 'LAM') return [251, 207, 232]    // Pink Soft (FBCFE8)
+  if (code === 'LAM(P)') return [209, 250, 229] // Emerald Soft (D1FAE5)
+  if (code === 'LAP') return [224, 242, 254]    // Sky Soft (E0F2FE)
+  if (code === 'LAP(P)') return [252, 231, 243] // Rose Soft (FCE7F3)
+  
+  if (isWeekendOrHoliday) return [239, 68, 68] // Red for weekend
+  
+  return null
+}
 
     autoTable(doc, {
       startY: 28,
@@ -575,11 +669,14 @@ export default function RekapAbsensiMatrix() {
     
     // Teks Keterangan yang diminta
     const keteranganLines = [
-        "Keterangan:",
-        "1 Shift (H) | 2 Shift (2x) | 2 Shift (1 Telat) (2T¹) | 1 Shift Telat (T)",
-        "Cuti (C) | Sakit (S) | Izin (I) | Izin Potong (IP) | ½ Hari",
-        "L (Libur Nasional) | Akhir Pekan (Warna Merah) | A (Alpha)"
-    ]
+  "Keterangan:",
+  "1 Shift (H) | 2 Shift (2x) | 2 Shift (1 Telat) (2T¹) | 1 Shift Telat (T)",
+  "Cuti (C) | Sakit (S) | Izin (I) | Izin Potong (IP) | ½ Hari",
+  "L (Libur Nasional) | Akhir Pekan (Warna Merah) | A (Alpha)",
+  "LAM = Lupa Absen Masuk | LAM(P) = Lupa Absen Masuk (Potong Gaji)",
+  "LAP = Lupa Absen Pulang | LAP(P) = Lupa Absen Pulang (Potong Gaji)",
+]
+
     
     // Cetak per baris
     let currentY = finalY;
@@ -727,24 +824,75 @@ export default function RekapAbsensiMatrix() {
         </div>
       )}
 
-      {/* FOOTER LEGEND */}
-      <div className="mt-4 flex flex-wrap gap-4 text-xs bg-white p-3 rounded border border-gray-200 shadow-sm">
-        <span className="font-bold text-gray-700">Keterangan:</span>
-        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-green-200 border border-green-300 inline-block"></span> 1 Shift (H)</div>
-        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-green-600 border border-green-700 inline-block"></span> 2 Shift (2x)</div>
-        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-yellow-600 border border-yellow-700 inline-block"></span> 2 Shift (1 Telat) (2T¹)</div>
-        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-yellow-500 border border-yellow-600 inline-block"></span> 1 Shift Telat (T)</div>
-        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-blue-200 border border-blue-300 inline-block"></span> Cuti (C)</div>
-        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-orange-200 border border-orange-300 inline-block"></span> Sakit (S)</div>
-        
-        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-yellow-200 border border-yellow-300 inline-block"></span> Izin (I)</div>
-        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-rose-300 border border-rose-400 inline-block"></span> Izin Potong (IP)</div>
-        
-        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-purple-200 border border-purple-300 inline-block"></span> ½ Hari</div>
-        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-red-600 border border-red-700 inline-block text-white text-center leading-4 font-bold">L</span> Libur Nasional</div>
-        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-red-500 border border-red-600 inline-block"></span> Akhir Pekan</div>
-        <div className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-red-600 border border-red-700 inline-block text-white text-center leading-4 font-bold">A</span> Alpha</div>
-      </div>
-    </div>
+     {/* FOOTER LEGEND */}
+<div className="mt-4 flex flex-wrap gap-4 text-xs bg-white p-3 rounded border border-gray-200 shadow-sm">
+  <span className="font-bold text-gray-700">Keterangan:</span>
+  
+  <div className="flex items-center gap-1.5">
+    <span className="w-4 h-4 rounded bg-green-200 border border-green-300 inline-block"></span> 1 Shift (H)
+  </div>
+  
+  <div className="flex items-center gap-1.5">
+    <span className="w-4 h-4 rounded bg-green-600 border border-green-700 inline-block"></span> 2 Shift (2x)
+  </div>
+
+  <div className="flex items-center gap-1.5">
+    <span className="w-4 h-4 rounded bg-yellow-600 border border-yellow-700 inline-block"></span> 2 Shift (1 Telat) (2T¹)
+  </div>
+
+  <div className="flex items-center gap-1.5">
+    <span className="w-4 h-4 rounded bg-yellow-500 border border-yellow-600 inline-block"></span> 1 Shift Telat (T)
+  </div>
+
+  <div className="flex items-center gap-1.5">
+    <span className="w-4 h-4 rounded bg-blue-200 border border-blue-300 inline-block"></span> Cuti (C)
+  </div>
+
+  <div className="flex items-center gap-1.5">
+    <span className="w-4 h-4 rounded bg-orange-200 border border-orange-300 inline-block"></span> Sakit (S)
+  </div>
+
+  <div className="flex items-center gap-1.5">
+    <span className="w-4 h-4 rounded bg-yellow-100 border border-yellow-200 inline-block"></span> Izin (I)
+  </div>
+
+  <div className="flex items-center gap-1.5">
+    <span className="w-4 h-4 rounded bg-rose-200 border border-rose-300 inline-block"></span> Izin Potong (IP)
+  </div>
+
+  <div className="flex items-center gap-1.5">
+    <span className="w-4 h-4 rounded bg-purple-200 border border-purple-300 inline-block"></span> ½ Hari
+  </div>
+
+  <div className="flex items-center gap-1.5">
+    <span className="w-4 h-4 rounded bg-red-700 border border-red-800 inline-block text-white text-[10px] text-center leading-4 font-bold">L</span> Libur Nasional
+  </div>
+
+  <div className="flex items-center gap-1.5">
+    <span className="w-4 h-4 rounded bg-red-500 border border-red-600 inline-block"></span> Akhir Pekan
+  </div>
+
+  <div className="flex items-center gap-1.5">
+    <span className="w-4 h-4 rounded bg-red-600 border border-red-700 inline-block text-white text-[10px] text-center leading-4 font-bold">A</span> Alpha
+  </div>
+
+  {/* PENYELARASAN 4 STYLE BARU */}
+  <div className="flex items-center gap-1.5">
+    <span className="w-4 h-4 rounded bg-pink-200 border border-pink-300 inline-block"></span> Lupa absen masuk (LAM)
+  </div>
+
+  <div className="flex items-center gap-1.5">
+    <span className="w-4 h-4 rounded bg-emerald-200 border border-emerald-300 inline-block"></span> Lupa absen masuk LAM(P)
+  </div>
+
+  <div className="flex items-center gap-1.5">
+    <span className="w-4 h-4 rounded bg-sky-200 border border-sky-300 inline-block"></span> Lupa absen pulang (LAP)
+  </div>
+
+  <div className="flex items-center gap-1.5">
+    <span className="w-4 h-4 rounded bg-rose-100 border border-rose-200 inline-block"></span> Lupa absen pulang LAP(P)
+  </div>
+</div>
+</div>
   )
 }
