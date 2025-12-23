@@ -1,71 +1,103 @@
-Sistem Manajemen Kinerja & Absensi PPNPN (KPPN Lhokseumawe)
+Sistem Manajemen Kinerja & Absensi PPNPN
 
-Sistem aplikasi berbasis web yang dikembangkan khusus untuk KPPN Lhokseumawe guna mendigitalisasi proses absensi berbasis lokasi (Geofencing) dan pelaporan kinerja harian (Logbook) bagi PPNPN.
+KPPN Lhokseumawe
+
+Sistem Manajemen Kinerja & Absensi PPNPN adalah aplikasi berbasis web yang dikembangkan untuk mendukung digitalisasi proses absensi berbasis lokasi (geofencing) dan pelaporan kinerja harian (logbook) bagi Pegawai Pemerintah Non Pegawai Negeri (PPNPN) di lingkungan KPPN Lhokseumawe.
+
+Aplikasi ini dirancang sebagai sistem pendukung internal untuk meningkatkan efisiensi administrasi, akuntabilitas kehadiran, serta keteraturan pelaporan kinerja harian.
+
+Tujuan Pengembangan
+
+Mendukung modernisasi proses administrasi internal
+
+Meningkatkan validasi kehadiran berbasis lokasi
+
+Menyederhanakan proses rekap absensi dan logbook
+
+Mengurangi ketergantungan pada input manual
 
 Spesifikasi Teknologi
 
-Dalam pengembangan aplikasi ini, saya menggunakan tech stack berikut:
+Aplikasi ini dikembangkan menggunakan teknologi web modern dengan arsitektur ringan dan mudah dipelihara.
 
 const TechStack = {
   Frontend: "Next.js 14 (App Router)",
   Styling: "Tailwind CSS & Shadcn/UI",
   Database: "PostgreSQL (Supabase)",
-  Storage: "Supabase Buckets (Surat Dokter/Bukti Izin)",
+  Storage: "Supabase Buckets (Surat Dokter / Bukti Izin)",
   Deployment: "Vercel"
 };
 
-
 Fitur Utama
+1️⃣ Absensi Berbasis Geofencing
 
-Aplikasi ini memiliki beberapa fitur krusial yang diintegrasikan dengan kebijakan internal kantor:
+Validasi kehadiran pegawai dilakukan menggunakan koordinat GPS dari browser.
 
-1. Absensi Geofencing
+Tombol absensi hanya aktif apabila:
 
-Validasi kehadiran pegawai menggunakan koordinat GPS. Tombol absen hanya aktif jika:
-$$ JarakPegawai \le 500 \text{ meter dari Kantor} $$
+Jarak Pegawai ≤ 500 meter dari lokasi kantor
 
-2. Mandatory Logbook
 
-Mekanisme penguncian sistem dimana pegawai tidak dapat melakukan Absen Pulang sebelum mengisi logbook kinerja harian.
+Berfungsi sebagai mekanisme validasi kehadiran berbasis lokasi
 
-3. Manajemen Cuti & Izin
+2️⃣ Mandatory Logbook Kinerja
 
-Sistem pengajuan mandiri dengan fitur:
+Sistem menerapkan mekanisme penguncian dimana:
 
-Sisa kuota cuti otomatis.
+Pegawai tidak dapat melakukan Absen Pulang
 
-Upload bukti surat sakit (Format: .pdf, .jpg, .png).
+Sebelum mengisi logbook kinerja harian
 
-Status Approval 2 tingkat (Kasubbag & Kepala Kantor).
+Fitur ini memastikan keterkaitan antara kehadiran dan aktivitas kerja.
 
-Panduan Instalasi Lokal
+3️⃣ Manajemen Cuti & Izin
 
-Ikuti langkah-langkah berikut untuk menjalankan proyek di komputer Anda:
+Sistem pengajuan cuti dan izin mandiri dengan fitur:
 
-1. Clone Project
+Perhitungan sisa kuota cuti otomatis
 
-git clone [https://github.com/daramayanda/logbook-kppn.git](https://github.com/daramayanda/logbook-kppn.git)
+Upload bukti pendukung:
+
+.pdf
+
+.jpg
+
+.png
+
+Mekanisme approval bertingkat:
+
+Kasubbag
+
+Kepala Kantor
+
+⚙️ Panduan Instalasi Lokal
+
+Ikuti langkah berikut untuk menjalankan aplikasi di lingkungan lokal.
+
+1️⃣ Clone Repository
+git clone https://github.com/daramayanda/logbook-kppn.git
 cd logbook-kppn
 
-
-2. Instalasi Library
-
+2️⃣ Instalasi Dependency
 npm install
-# atau menggunakan yarn
+# atau
 yarn install
 
+3️⃣ Konfigurasi Environment
 
-3. Konfigurasi Environment (.env.local)
+Buat file .env.local dan isi dengan kredensial Supabase Anda:
 
-Dapatkan kredensial dari dashboard Supabase Anda:
+NEXT_PUBLIC_SUPABASE_URL=https://project-anda.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
-NEXT_PUBLIC_SUPABASE_URL=[https://projek-anda.supabase.co](https://projek-anda.supabase.co)
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-
-
-4. Jalankan Server
-
+4️⃣ Jalankan Server Development
 npm run dev
 
-Dikembangkan Oleh
-Dara Mayanda Teknik Informatika - Universitas Malikussaleh Magang Kemenkeu Periode III - KPPN Lhokseumawe
+Aplikasi akan berjalan di:
+http://localhost:3000
+
+👩‍💻 Dikembangkan Oleh
+Dara Mayanda
+Mahasiswa Teknik Informatika – Universitas Malikussaleh
+Program Magang Kementerian Keuangan
+Periode III – KPPN Lhokseumawe
