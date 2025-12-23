@@ -47,6 +47,22 @@ export default function PengajuanCutiPage() {
 
   useEffect(() => setMounted(true), [])
 
+  // =================== LOGIKA BARU: HITUNG DURASI ===================
+  // Menghitung selisih hari untuk validasi
+  const calculateDuration = (start: string, end: string) => {
+    if (!start || !end) return 0
+    const s = new Date(start)
+    const e = new Date(end)
+    const diffTime = e.getTime() - s.getTime()
+    // Ditambah 1 agar tanggal yang sama dihitung 1 hari
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1
+    return diffDays > 0 ? diffDays : 0
+  }
+
+  const currentDuration = calculateDuration(startDate, endDate)
+  // Flag jika durasi lebih dari 3 hari
+  const isInvalidDuration = currentDuration > 3
+
   // =================== 1. AMBIL USER & KUOTA CUTI ===================
   useEffect(() => {
     if (!mounted) return
@@ -64,7 +80,6 @@ export default function PengajuanCutiPage() {
         .single()
 
       if (quotaError && quotaError.code === 'PGRST116') {
-        // Jika belum ada kuota, buatkan default 12
         const { error: insertError } = await supabase
           .from('master_leave_quota')
           .insert({ user_id: user.id, year: currentYear, annual_quota: 12, used_leave: 0 })
@@ -99,7 +114,6 @@ export default function PengajuanCutiPage() {
       return
     }
 
-    // Ambil status approval detail
     const { data: approvals } = await supabase
       .from('leave_approvals')
       .select('leave_request_id, level, status')
@@ -113,7 +127,7 @@ export default function PengajuanCutiPage() {
       if (level2?.status === 'Disetujui') finalStatus = 'Disetujui'
       else if (level2?.status === 'Ditolak') finalStatus = 'Ditolak'
       else if (level1?.status === 'Ditolak') finalStatus = 'Ditolak'
-      else if (level1?.status === 'Disetujui') finalStatus = 'Disetujui' // Menunggu L2
+      else if (level1?.status === 'Disetujui') finalStatus = 'Disetujui' 
 
       return { ...req, status: finalStatus }
     })
@@ -126,6 +140,13 @@ export default function PengajuanCutiPage() {
   // =================== 3. SUBMIT PENGAJUAN ===================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // --- LOGIKA BARU: Proteksi Submit ---
+    if (isInvalidDuration) {
+      return toast.error('Maksimal pengajuan adalah 3 hari')
+    }
+    // ------------------------------------
+
     if (!leaveType || !startDate || !endDate || !reason || !address)
       return toast.error('Semua field wajib diisi')
     if (!userId) return toast.error('User belum terdeteksi')
@@ -231,7 +252,7 @@ export default function PengajuanCutiPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             
-            {/* 1. Jenis Cuti (HANYA 2 OPSI) */}
+            {/* 1. Jenis Cuti */}
             <div>
               <label className="font-medium">Jenis Cuti</label>
               <select
@@ -302,7 +323,7 @@ export default function PengajuanCutiPage() {
               </div>
             )}
 
-            {/* 6. Opsi Tambahan (Setengah Hari & Potong Cuti) */}
+            {/* 6. Opsi Tambahan */}
             <div className="flex flex-col gap-2 pt-2">
               <div className="flex items-center gap-2">
                 <input type="checkbox" id="halfDay" checked={halfDay} onChange={(e) => setHalfDay(e.target.checked)} />
@@ -335,17 +356,25 @@ export default function PengajuanCutiPage() {
               </div>
             )}
 
-            {/* Tombol Submit */}
+            {/* --- LOGIKA BARU: Pesan Peringatan Merah --- */}
+            {isInvalidDuration && (
+              <p className="text-red-500 text-xs font-medium text-center bg-red-50 p-2 rounded border border-red-100">
+                ⚠️ Pengajuan maksimal 3 hari. Durasi terpilih: {currentDuration} hari.
+              </p>
+            )}
+
+            {/* --- LOGIKA BARU: Update Tombol Submit (Disabled state) --- */}
             <button type="submit"
-                    className="w-full bg-blue-700 text-white py-2.5 rounded-md hover:bg-blue-800 transition flex items-center justify-center font-medium shadow-sm"
-                    disabled={loading}>
+                    className={`w-full py-2.5 rounded-md transition flex items-center justify-center font-medium shadow-sm 
+                      ${(loading || isInvalidDuration) ? 'bg-gray-400 cursor-not-allowed text-white' : 'bg-blue-700 text-white hover:bg-blue-800'}`}
+                    disabled={loading || isInvalidDuration}>
               {loading ? <Loader2 size={20} className="animate-spin" /> : 'Kirim Pengajuan'}
             </button>
           </form>
         </CardContent>
       </Card>
 
-      {/* --- RIWAYAT PENGAJUAN --- */}
+      {/* --- RIWAYAT PENGAJUAN (Tidak Berubah) --- */}
       <Card className="shadow-sm border border-gray-200">
         <CardHeader className="flex flex-col sm:flex-row justify-between items-center gap-2 pb-2">
           <CardTitle className="text-lg font-semibold text-gray-800">Riwayat Pengajuan</CardTitle>

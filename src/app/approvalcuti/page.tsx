@@ -105,7 +105,7 @@ export default function ApprovalCutiPage() {
           // Kita perlu sisa cuti realtime jika jenisnya 'Cuti Tahunan' ATAU 'Cuti Sakit'
           if (lr.leave_type !== 'Cuti Tahunan' && lr.leave_type !== 'Cuti Sakit') {
           // ========================================================
-            return { ...lr, sisa_cuti_realtime: null }; // Jenis cuti lain (Melahirkan, dll) tidak perlu
+            return { ...lr, sisa_cuti_realtime: null }; // 
           }
           
           // Jika Cuti Tahunan atau Cuti Sakit, LANJUT ambil kuota
