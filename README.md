@@ -1,103 +1,36 @@
-Sistem Manajemen Kinerja & Absensi PPNPN
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-KPPN Lhokseumawe
+## Getting Started
 
-Sistem Manajemen Kinerja & Absensi PPNPN adalah aplikasi berbasis web yang dikembangkan untuk mendukung digitalisasi proses absensi berbasis lokasi (geofencing) dan pelaporan kinerja harian (logbook) bagi Pegawai Pemerintah Non Pegawai Negeri (PPNPN) di lingkungan KPPN Lhokseumawe.
+First, run the development server:
 
-Aplikasi ini dirancang sebagai sistem pendukung internal untuk meningkatkan efisiensi administrasi, akuntabilitas kehadiran, serta keteraturan pelaporan kinerja harian.
-
-Tujuan Pengembangan
-
-Mendukung modernisasi proses administrasi internal
-
-Meningkatkan validasi kehadiran berbasis lokasi
-
-Menyederhanakan proses rekap absensi dan logbook
-
-Mengurangi ketergantungan pada input manual
-
-Spesifikasi Teknologi
-
-Aplikasi ini dikembangkan menggunakan teknologi web modern dengan arsitektur ringan dan mudah dipelihara.
-
-const TechStack = {
-  Frontend: "Next.js 14 (App Router)",
-  Styling: "Tailwind CSS & Shadcn/UI",
-  Database: "PostgreSQL (Supabase)",
-  Storage: "Supabase Buckets (Surat Dokter / Bukti Izin)",
-  Deployment: "Vercel"
-};
-
-Fitur Utama
-1️⃣ Absensi Berbasis Geofencing
-
-Validasi kehadiran pegawai dilakukan menggunakan koordinat GPS dari browser.
-
-Tombol absensi hanya aktif apabila:
-
-Jarak Pegawai ≤ 500 meter dari lokasi kantor
-
-
-Berfungsi sebagai mekanisme validasi kehadiran berbasis lokasi
-
-2️⃣ Mandatory Logbook Kinerja
-
-Sistem menerapkan mekanisme penguncian dimana:
-
-Pegawai tidak dapat melakukan Absen Pulang
-
-Sebelum mengisi logbook kinerja harian
-
-Fitur ini memastikan keterkaitan antara kehadiran dan aktivitas kerja.
-
-3️⃣ Manajemen Cuti & Izin
-
-Sistem pengajuan cuti dan izin mandiri dengan fitur:
-
-Perhitungan sisa kuota cuti otomatis
-
-Upload bukti pendukung:
-
-.pdf
-
-.jpg
-
-.png
-
-Mekanisme approval bertingkat:
-
-Kasubbag
-
-Kepala Kantor
-
-⚙️ Panduan Instalasi Lokal
-
-Ikuti langkah berikut untuk menjalankan aplikasi di lingkungan lokal.
-
-1️⃣ Clone Repository
-git clone https://github.com/daramayanda/logbook-kppn.git
-cd logbook-kppn
-
-2️⃣ Instalasi Dependency
-npm install
-# atau
-yarn install
-
-3️⃣ Konfigurasi Environment
-
-Buat file .env.local dan isi dengan kredensial Supabase Anda:
-
-NEXT_PUBLIC_SUPABASE_URL=https://project-anda.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-
-4️⃣ Jalankan Server Development
+```bash
 npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
+```
 
-Aplikasi akan berjalan di:
-http://localhost:3000
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-👩‍💻 Dikembangkan Oleh
-Dara Mayanda
-Mahasiswa Teknik Informatika – Universitas Malikussaleh
-Program Magang Kementerian Keuangan
-Periode III – KPPN Lhokseumawe
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+
+## Learn More
+
+To learn more about Next.js, take a look at the following resources:
+
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
