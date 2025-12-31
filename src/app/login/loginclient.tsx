@@ -218,7 +218,7 @@ export default function LoginClient() {
           </form>
 
           <p className="text-center text-sm text-gray-600">
-            Belum punya akun? <Link href="/register" className="font-medium text-[#4A90E2] hover:text-[#003366]">Sign Up</Link>
+            Belum punya akun? Maaf untuk pendaftaran akun Pegawai Honorer KPPN Lhokseumawe silahkan hubungi admin
           </p>
         </div>
       </div>
