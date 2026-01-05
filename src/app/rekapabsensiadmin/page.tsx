@@ -46,6 +46,7 @@ type PermissionInfo = {
 type AttendanceInfo = {
   shift: string
   checkIn: string
+  checkOut:string
 }
 
 type LeaveQuota = {
@@ -122,7 +123,7 @@ export default function RekapAbsensiMatrix() {
       // 2. Fetch Attendance
       const { data: dataAtt } = await supabase
         .from('attendances')
-        .select('user_id, attendance_date, shift, check_in') 
+        .select('user_id, attendance_date, shift, check_in, check_out') 
         .gte('attendance_date', startDateStr)
         .lte('attendance_date', endDateStr)
 
@@ -173,7 +174,7 @@ export default function RekapAbsensiMatrix() {
         const currentList = tempAttMap.get(key) || []
         const exists = currentList.find(item => item.shift === a.shift)
         if (!exists && a.check_in) {
-            currentList.push({ shift: a.shift, checkIn: a.check_in })
+            currentList.push({ shift: a.shift, checkIn: a.check_in, checkOut: a.check_out } )
         }
         tempAttMap.set(key, currentList)
       })
@@ -233,6 +234,11 @@ export default function RekapAbsensiMatrix() {
     fetchData()
   }, [month, year])
 
+  const formatTime = (value?: string) => {
+    if (!value) return '-'
+    const d = new Date(value)
+    return format(d, 'HH:mm')
+  }
   // 3. CORE LOGIC
   const matrixData = useMemo(() => {
     let filteredProfiles = profiles
@@ -330,64 +336,70 @@ export default function RekapAbsensiMatrix() {
             else { code = 'C'; color = 'bg-blue-200 text-blue-800'; tooltip = `Cuti: ${info.type}`; stats.C++ }
         }
         else if (attendanceMap.has(key)) {
-  const shifts = attendanceMap.get(key) || [];
-  let dayLateCount = 0;
-  
-  // Ambil posisi dari profile user saat ini
-  const userPos = profile.position?.toUpperCase() || '';
+          const shifts = attendanceMap.get(key) || []
+          let dayLateCount = 0
+          let tooltipLines: string[] = []
 
-  shifts.forEach(s => {
-    // Gunakan s.check_in (sesuai database)
-    const checkInDate = new Date(s.checkIn || s.checkIn); 
-    const hours = checkInDate.getHours();
-    const minutes = checkInDate.getMinutes();
-    const totalMinutes = hours * 60 + minutes;
+          const userPos = profile.position?.toUpperCase() || ''
 
-    let lockHour, lockMin;
+          shifts.forEach((s, idx) => {
+            const checkInDate = new Date(s.checkIn)
+            const hours = checkInDate.getHours()
+            const minutes = checkInDate.getMinutes()
+            const totalMinutes = hours * 60 + minutes
 
-    // --- SELARASKAN DENGAN CHECK-IN PAGE ---
-    if ((s.shift || '').toLowerCase().includes('pagi')) {
-      if (userPos.includes('SATPAM')) {
-        [lockHour, lockMin] = [7, 5]; // 07:05
-      } else if (userPos.includes('CS')) {
-        [lockHour, lockMin] = [7, 30]; // 07:30
-      } else {
-        [lockHour, lockMin] = [8, 0]; // Umum/Supir/PPNP
-      }
-    } else {
-      // Shift Malam
-      if (userPos.includes('SATPAM')) {
-        [lockHour, lockMin] = [18, 5]; // 18:05
-      } else {
-        [lockHour, lockMin] = [19, 0]; // Umum Malam
-      }
-    }
+            let lockHour, lockMin
 
-    const limitMinutes = lockHour * 60 + lockMin;
-    if (totalMinutes > limitMinutes) dayLateCount++;
-  });
+            if ((s.shift || '').toLowerCase().includes('pagi')) {
+              if (userPos.includes('SATPAM')) [lockHour, lockMin] = [7, 5]
+              else if (userPos.includes('CS')) [lockHour, lockMin] = [7, 30]
+              else [lockHour, lockMin] = [8, 0]
+            } else {
+              if (userPos.includes('SATPAM')) [lockHour, lockMin] = [18, 5]
+              else [lockHour, lockMin] = [19, 0]
+            }
 
-  // --- PENENTUAN KODE ---
-  if (shifts.length > 1) {
-    if (dayLateCount === 1) { 
-      code = '2T¹'; color = 'bg-yellow-600 text-white font-bold'; tooltip = '2 Shift (1 Telat)'; 
-    } else if (dayLateCount >= 2) { 
-      code = '2T²'; color = 'bg-orange-700 text-white font-bold'; tooltip = '2 Shift (2 Telat)'; 
-    } else { 
-      code = '2x'; color = 'bg-green-600 text-white font-bold'; tooltip = 'Hadir 2 Shift'; 
-    }
-  } else {
-    if (dayLateCount > 0) { 
-      code = 'T'; color = 'bg-yellow-500 text-white font-bold'; tooltip = 'Terlambat'; 
-    } else { 
-      code = 'H'; color = 'bg-green-200 text-green-800 border-green-300'; tooltip = 'Hadir Tepat Waktu'; 
-    }
-  }
-  
-  stats.H += 1; 
-  stats.Sft += shifts.length; 
-  stats.T += dayLateCount;
-}
+            const limitMinutes = lockHour * 60 + lockMin
+            if (totalMinutes > limitMinutes) dayLateCount++
+
+            // === BARIS TOOLTIP ===
+            tooltipLines.push(
+              `Shift ${idx + 1} (${s.shift})\n` +
+              `• Check-in  : ${formatTime(s.checkIn)}\n` +
+              `• Check-out : ${formatTime(s.checkOut)}`
+            )
+          })
+
+          // --- KODE & WARNA ---
+          if (shifts.length > 1) {
+            if (dayLateCount === 1) {
+              code = '2T¹'
+              color = 'bg-yellow-600 text-white font-bold'
+            } else if (dayLateCount >= 2) {
+              code = '2T²'
+              color = 'bg-orange-700 text-white font-bold'
+            } else {
+              code = '2x'
+              color = 'bg-green-600 text-white font-bold'
+            }
+          } else {
+            if (dayLateCount > 0) {
+              code = 'T'
+              color = 'bg-yellow-500 text-white font-bold'
+            } else {
+              code = 'H'
+              color = 'bg-green-200 text-green-800 border-green-300'
+            }
+          }
+
+          tooltip =
+            `${code === 'H' ? 'Hadir Tepat Waktu' : 'Hadir'}\n` +
+            tooltipLines.join('\n')
+
+          stats.H++
+          stats.Sft += shifts.length
+          stats.T += dayLateCount
+        }
         else if (holidayName) {
             code = 'L'; color = 'bg-red-600 text-white font-bold'; tooltip = `LIBUR NASIONAL: ${holidayName}`;
         }
