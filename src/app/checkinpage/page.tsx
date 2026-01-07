@@ -12,6 +12,10 @@ const OFFICE_LOCATION = {
   RADIUS_M: 500,
 };
 
+const WIB_OFFSET = 7 * 60 * 60 * 1000;
+const getTodayWIB = () =>
+  new Date(Date.now() + WIB_OFFSET).toISOString().split('T')[0];
+
 export default function CheckInPage() {
   const router = useRouter();
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -22,6 +26,8 @@ export default function CheckInPage() {
   const [locationStatus, setLocationStatus] = useState<string>('Mencari lokasi...');
   const [shift, setShift] = useState<'pagi' | 'malam'>('pagi');
   const [todayDate, setTodayDate] = useState(new Date().toISOString().split('T')[0]);
+  const [todayDateWib, setTodayDateWib] = useState(getTodayWIB());
+  
   const [userId, setUserId] = useState<string | null>(null);
   const [canCheckIn, setCanCheckIn] = useState(true);
 
@@ -113,7 +119,7 @@ export default function CheckInPage() {
         .from('attendances')
         .select('id')
         .eq('user_id', userId)
-        .eq('attendance_date', todayDate)
+        .eq('attendance_date', todayDateWib)
         .eq('shift', shift)
         .maybeSingle();
       setCanCheckIn(!data);
@@ -162,19 +168,19 @@ export default function CheckInPage() {
         }
       }
 
-      const shiftStart = new Date(todayDate + 'T' + lockTime);
+      const shiftStart = new Date(todayDateWib + 'T' + lockTime);
       const statusAbsen = now > shiftStart ? 'Terlambat' : 'Hadir';
 
       const { data: attendanceData, error: attendanceError } = await supabase
         .from('attendances')
         .insert([{
           user_id: userId,
-          attendance_date: todayDate,
+          attendance_date: todayDateWib,
           shift,
           shift_start: shiftStart.toISOString(),
           shift_end: shift === 'pagi' 
-            ? new Date(todayDate + 'T17:30:00').toISOString() 
-            : new Date(new Date(todayDate).getTime() + 86400000 + 7 * 3600000).toISOString(),
+            ? new Date(todayDateWib + 'T17:30:00').toISOString() 
+            : new Date(new Date(todayDateWib).getTime() + 86400000 + 7 * 3600000).toISOString(),
           check_in: now.toISOString(),
           status: statusAbsen,
           check_in_location: address,
@@ -191,7 +197,7 @@ export default function CheckInPage() {
         user_id: userId,
         attendance_id: attendanceData.id,
         shift,
-        log_date: todayDate,
+        log_date: todayDateWib,
         description: '',
         status: 'IN_PROGRESS',
       }]);
