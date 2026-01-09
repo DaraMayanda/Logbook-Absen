@@ -9,7 +9,7 @@ import { toast } from 'react-hot-toast';
 const OFFICE_LOCATION = {
   latitude: 5.179003,
   longitude: 97.149272,
-  RADIUS_M: 500,
+  RADIUS_M: 200,
 };
 
 const WIB_OFFSET = 7 * 60 * 60 * 1000;
@@ -132,7 +132,7 @@ export default function CheckInPage() {
     if (!location) return toast.error('Lokasi belum terdeteksi.');
 
     const isValidLocation =
-      (distance && distance <= OFFICE_LOCATION.RADIUS_M) ||
+      (distance && distance <= OFFICE_LOCATION.RADIUS_M) &&
       (address && address.toLowerCase().includes('lhokseumawe'));
 
     if (!isValidLocation) return toast.error('Lokasi di luar area kantor.');
@@ -242,7 +242,7 @@ export default function CheckInPage() {
         </div>
 
         <div className="bg-white p-4 rounded-xl shadow-md border mb-5">
-          <p className="font-semibold text-gray-700 mb-1">Status Lokasi:</p>
+          <p className="font-semibold text-gray-700 mb-1">Status Lokasi (max 200m dari kantor ):</p>
           <p className={`text-sm ${distance && distance <= OFFICE_LOCATION.RADIUS_M ? 'text-green-600' : 'text-red-600'}`}>
             {locationStatus}
           </p>
