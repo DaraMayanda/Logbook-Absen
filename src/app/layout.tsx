@@ -8,8 +8,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "My Absensi",
-  description: "Aplikasi absensi dan logbook berbasis Next.js + Supabase",
+  title: "Aplikasi Pak Ihsan V2",
+  description: "Aplikasi administrasi honorer KPPN Lhokseumawe V2",
 };
 
 export default function RootLayout({
