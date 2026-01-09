@@ -40,41 +40,43 @@ export default function LogbookPage() {
 
   // --- Daftar Tugas Sesuai Jabatan ---
   const tugasPPNPN = [
-    "Pengarsipan dokumen dan surat",
-    "Input data ke aplikasi SAKTI / Excel",
-    "Membantu administrasi kepegawaian",
-    "Distribusi dokumen internal antar seksi",
+    "Membersihkan ruangan kantor dan area kerja",
+    "Pengarsipan, pemindaian, scan dokumen dan surat",
+    "Membantu belanja kebutuhan kantor",
+    "Input data ke aplikasi atau excel",
+    "Membantu administrasi, rekapitulasi dan absensi kepegawaian",
     "Verifikasi kelengkapan dokumen",
-    "Penyusunan laporan harian",
-    "Rekapitulasi surat masuk dan keluar",
+    "Membantu penyusunan laporan",
+    "Validasi surat masuk dan keluar",
     "Pelayanan konsultasi tamu dan satker",
     "Membantu kegiatan rapat dan dokumentasi",
-    "Pemindaian (scan) arsip penting",
-    "Membantu staf ASN dalam kegiatan rutin",
+    "Membantu pegawai dalam tugas kantor",
     "Lainnya"
   ]
   const tugasSatpam = [
-    "Menjaga keamanan gedung dan area kantor",
-    "Mencatat tamu masuk dan keluar",
-    "Patroli area kantor secara berkala",
-    "Mengontrol akses kendaraan",
-    "Mengawasi CCTV dan sistem keamanan",
-    "Membantu kegiatan upacara atau apel",
-    "Menjaga ketertiban di area parkir",
+    "Patroli area luar dan dalam kantor 3x",
+    "Membantu membuka pintu gerbang atau menyeberangkan kendaraan pegawai dan tamu",
+    "Mencatat, mengatur area parkir dan akses kendaraan masuk keluar",
+    "Menyapu dan membersihkan lapangan",
+    "Menghidupkan lampu tanaman, menyiram air taman, membersihkan pos jaga",
+    "Mematikan lampu, AC, keran air, mesin pompa air, memeriksa seluruh ruangan dari lantai 1-3",
+    "Mengibarkan dan menurunkan bendera merah putih",
     "Lainnya"
   ]
   const tugasSupir = [
-    "Mengantar dan menjemput pegawai sesuai jadwal",
-    "Memastikan kendaraan siap digunakan",
-    "Merawat dan membersihkan kendaraan dinas",
-    "Mencatat perjalanan dinas",
-    "Melaporkan kerusakan kendaraan",
-    "Menunggu pegawai selama kegiatan lapangan",
+    "Mencuci Mobil Kepala Kantor",
+    "Mencuci Mobil Operasional Rush",
+    "Mencuci Mobil Operasional Wuling",
+    "Mencuci Motor Operasional",
+    "Mengantar Ka.Kantor atau pegawai sesuai jadwal",
+    "Memastikan kendaraan siap digunakan Accu, air wipper, tekanan angin",
     "Lainnya"
   ]
   const tugasCS = [
-    "Menyapu dan mengepel ruangan",
-    "Membersihkan kamar mandi",
+    "Menyapu, mengepel, membersihkan meja ruangan pagi siang sore",
+    "Membersihkan kamar mandi pagi siang sore",
+    "Membersihkan halaman, memotong rumput dan merawat tanaman",
+    "Membantu Resepsionis dan mengarahkan tamu",
     "Lainnya"
   ]
 
