@@ -256,7 +256,7 @@ export default function ApprovalCutiPage() {
         return {
           'ID': lr.id,
           'Nama': lr.profiles?.full_name || '-',
-          'Sisa Cuti (Saat Pengajuan)': lr.sisa_cuti_saat_pengajuan ?? 0,
+          'Sisa Cuti': (lr.sisa_cuti_saat_pengajuan??0)-(lr.durasi_hari_kerja ?? 0),
           'Jabatan': lr.profiles?.position || '-',
           'Jenis Cuti': lr.leave_type || '-',
           'Periode': `${lr.start_date ? new Date(lr.start_date).toLocaleDateString('id-ID') : '-'} - ${lr.end_date ? new Date(lr.end_date).toLocaleDateString('id-ID') : '-'}`,
@@ -390,7 +390,7 @@ export default function ApprovalCutiPage() {
         const approvalLevel2 = approvals.find((a) => a.leave_request_id === lr.id && a.level === 2)
         return {
           nama: lr.profiles?.full_name || '-',
-          sisa_cuti: lr.sisa_cuti_saat_pengajuan ?? 0, // <-- Menggunakan SNAPSHOT
+          sisa_cuti: (lr.sisa_cuti_saat_pengajuan ?? 0)-(lr.durasi_hari_kerja??0), // <-- Menggunakan SNAPSHOT
           jabatan: lr.profiles?.position || '-',
           jenis: lr.leave_type || '-',
           periode: `${formatDate(lr.start_date)} - ${formatDate(lr.end_date)}`,
