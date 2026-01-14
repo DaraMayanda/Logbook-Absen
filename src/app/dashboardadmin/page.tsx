@@ -196,6 +196,7 @@ export default function DashboardAdmin() {
             
             {/* Menu Rekap */}
             <MenuCard icon={BarChart2} title="Rekap Absensi Matrix" description="Laporan absensi bulanan (Semua)" href="/rekapabsensiadmin" />
+            <MenuCard icon={BarChart2} title="Rekap Lembur Matrix" description="Laporan Lembur bulanan (Semua)" href="/rekaplemburadmin" />
             
             {/* --- MENU BARU: Detail Absensi Individu --- */}
             <MenuCard 
