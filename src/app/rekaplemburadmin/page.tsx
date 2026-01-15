@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabaseClient"
+import { Button } from '@/components/ui/button'
 import * as XLSX from "xlsx"
 import jsPDF from "jspdf"
 import "jspdf-autotable"
@@ -231,12 +232,12 @@ export default function RekapLembur() {
     <div className="p-6">
 
       <div className="flex justify-between mb-4">
-        <button
+        <Button
           onClick={()=>window.history.back()}
-          className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300"
+          className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white"
         >
           ← Kembali ke Halaman Admin
-        </button>
+        </Button>
 
         <div className="space-x-2">
           <button onClick={exportExcel} className="px-4 py-2 rounded bg-green-500 text-white">
@@ -289,7 +290,6 @@ export default function RekapLembur() {
               <th className="border p-2">Nama</th>
               <th className="border p-2">Jabatan</th>
               <th className="border p-2">Total</th>
-              <th className="border p-2">-</th>
 
               {Array.from({length:daysInMonth},(_,i)=>(
                 <th
@@ -319,7 +319,7 @@ export default function RekapLembur() {
                 <td className="border p-2">{row.nama}</td>
                 <td className="border p-2">{row.jabatan}</td>
                 <td className="border p-2 text-center font-bold">{row.total}</td>
-                <td className="border p-2 text-center">-</td>
+                
 
                 {Array.from({length:daysInMonth},(_,i)=>{
 

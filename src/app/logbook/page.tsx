@@ -74,8 +74,8 @@ export default function LogbookPage() {
   ]
   const tugasCS = [
     "Menyapu, mengepel, membersihkan meja ruangan pagi siang sore",
-    "Membersihkan kamar mandi pagi siang sore",
     "Membersihkan halaman, memotong rumput dan merawat tanaman",
+    "Membersihkan kamar mandi pagi siang sore",
     "Membantu Resepsionis dan mengarahkan tamu",
     "Lainnya"
   ]

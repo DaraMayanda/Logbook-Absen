@@ -116,7 +116,8 @@ export default function RekapAbsensiMatrix() {
         .select('id, full_name, position')
         .neq('role', 'admin')      
         .neq('is_admin', true)     
-        .order('full_name')
+        .order('position',{ascending: true})
+        .order('full_name',{ascending: true})
       
       if (errProf) throw errProf
 
@@ -753,7 +754,7 @@ const getCellColor = (code: string, isWeekendOrHoliday: boolean) => {
       <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-4 space-y-4">
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-3 w-full md:w-auto">
-            <Button variant="outline" onClick={() => router.push('/dashboardadmin')} className="gap-2">
+            <Button variant="outline" onClick={() => router.push('/dashboardadmin')} className="gap-2 bg-green-600 hover:bg-green-700 text-white">
               <ArrowLeft className="w-4 h-4"/> Kembali
             </Button>
             <div>
