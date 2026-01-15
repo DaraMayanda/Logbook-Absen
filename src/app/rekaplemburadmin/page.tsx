@@ -9,10 +9,30 @@ import "jspdf-autotable"
 
 export default function RekapLembur() {
 
-  const [month, setMonth] = useState(() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`
-  })
+const now = new Date()
+const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1)
+const [selectedYear, setSelectedYear] = useState(now.getFullYear())
+const month = `${selectedYear}-${String(selectedMonth).padStart(2,"0")}`
+
+const monthOptions = [
+  { value: 1, label: "Januari" },
+  { value: 2, label: "Februari" },
+  { value: 3, label: "Maret" },
+  { value: 4, label: "April" },
+  { value: 5, label: "Mei" },
+  { value: 6, label: "Juni" },
+  { value: 7, label: "Juli" },
+  { value: 8, label: "Agustus" },
+  { value: 9, label: "September" },
+  { value: 10, label: "Oktober" },
+  { value: 11, label: "November" },
+  { value: 12, label: "Desember" },
+]
+
+const yearOptions = Array.from(
+  { length: 5 },
+  (_, i) => now.getFullYear() - 2 + i
+)
 
   const [users, setUsers] = useState<any[]>([])
   const [selectedUser, setSelectedUser] = useState<string>("ALL")
@@ -63,25 +83,28 @@ export default function RekapLembur() {
         .gte("date", firstDay)
         .lte("date", lastDay)
 
-      setHolidays((data || []).map((d:any)=>d.holiday_date))
+      setHolidays((data || []).map((d:any)=>d.date))
     }
 
     loadHolidays()
 
   }, [month, daysInMonth])
 
-  // fungsi cek weekend/libur
-  const isHolidayOrWeekend = (y:number,m:number,d:number) => {
-    const date = new Date(y, m-1, d)
+  const toLocalDateString = (date: Date) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, "0")
+  const d = String(date.getDate()).padStart(2, "0")
+  return `${y}-${m}-${d}`
+}
 
-    const weekend = date.getDay() === 0 || date.getDay() === 6
+const isHolidayOrWeekend = (y:number,m:number,d:number) => {
+  const date = new Date(y, m - 1, d)
+  const weekend = date.getDay() === 0 || date.getDay() === 6
+  const localDate = toLocalDateString(date)
+  const holiday = holidays.includes(localDate)
+  return weekend || holiday
+}
 
-    const iso = date.toISOString().slice(0,10)
-
-    const holiday = holidays.includes(iso)
-
-    return weekend || holiday
-  }
 
   // --------------------------------
   // LOAD LEMBUR
@@ -255,15 +278,32 @@ export default function RekapLembur() {
       {/* FILTER */}
       <div className="flex gap-4 mb-4 items-end">
 
-        <div>
-          <label className="text-sm">Pilih Bulan</label>
-          <input
-            type="month"
-            value={month}
-            onChange={e=>setMonth(e.target.value)}
-            className="border rounded p-2 ml-2"
-          />
+        <div className="flex gap-2 items-center">
+          <select
+            value={selectedMonth}
+            onChange={e => setSelectedMonth(Number(e.target.value))}
+            className="border rounded p-2"
+          >
+            {monthOptions.map(m => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={selectedYear}
+            onChange={e => setSelectedYear(Number(e.target.value))}
+            className="border rounded p-2"
+          >
+            {yearOptions.map(y => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
         </div>
+
 
         <div>
           <label className="text-sm">Pegawai</label>
