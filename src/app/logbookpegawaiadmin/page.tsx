@@ -21,6 +21,7 @@ interface Attendance {
   full_name: string
   position: string
   uraian_kerja: string
+  description: string
 }
 
 export default function LogbookPegawaiAdminPage() {
@@ -38,7 +39,7 @@ export default function LogbookPegawaiAdminPage() {
 
   // PAGINATION
   const [currentPage, setCurrentPage] = useState(1)
-  const itemsPerPage = 5
+  const itemsPerPage = 10
 
   /* ================= INIT DATE ================= */
   useEffect(() => {
@@ -236,7 +237,7 @@ export default function LogbookPegawaiAdminPage() {
               <td className="p-2">{format(new Date(r.attendance_date), 'dd/MM/yyyy')}</td>
               <td className="p-2">{r.shift}</td>
               <td className="p-2">{r.status}</td>
-              <td className="p-2 text-sm">{r.uraian_kerja}</td>
+              <td className="p-2 text-sm">{r.uraian_kerja} <br/> {r.description}</td>
             </tr>
           ))}
         </tbody>
