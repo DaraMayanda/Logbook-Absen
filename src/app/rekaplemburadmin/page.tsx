@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabaseClient"
 import { Button } from '@/components/ui/button'
 import * as XLSX from "xlsx"
 import jsPDF from "jspdf"
-import "jspdf-autotable"
+import autoTable from "jspdf-autotable"
 
 export default function RekapLembur() {
 
@@ -148,6 +148,19 @@ const isHolidayOrWeekend = (y:number,m:number,d:number) => {
     return `${String(h)}`
   }
 
+  const capDuration = (
+    duration: any,
+    year: number,
+    month: number,
+    day: number
+  ) => {
+    if (!duration) return ""
+
+    const isRed = isHolidayOrWeekend(year, month, day)
+    const maxHour = isRed ? 4 : 2
+
+    return Math.min(Number(duration), maxHour)
+  }
   const fmtTime = (t: string) => {
     const d = new Date(t)
     return d.toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"})
@@ -194,62 +207,129 @@ const isHolidayOrWeekend = (y:number,m:number,d:number) => {
   }, [lembur, users])
 
   // --------------------------------
-  // EXPORT EXCEL & PDF (tetap sama)
+  // EXPORT EXCEL & PDF 
   // --------------------------------
-  const exportExcel = () => {
-    const data: any[] = []
+ const exportExcel = () => {
+  const data: any[] = []
 
-    grouped.forEach((row:any) => {
-      const obj:any = {
-        Nama: row.nama,
-        Jabatan: row.jabatan,
-        Total: row.total
+  grouped.forEach((row: any) => {
+    const obj: any = {
+      Nama: row.nama,
+      Jabatan: row.jabatan,
+      Total: row.total
+    }
+
+    for (let i = 1; i <= daysInMonth; i++) {
+      obj[`${i}`] = capDuration(
+        row.hari[i]?.duration,
+        yearNum,
+        monthNum,
+        i
+      )
+    }
+
+    data.push(obj)
+  })
+
+  // 👉 paksa urutan kolom
+  const headers = [
+    "Nama",
+    "Jabatan",
+    "Total",
+    ...Array.from({ length: daysInMonth }, (_, i) => String(i + 1))
+  ]
+
+  const ws = XLSX.utils.json_to_sheet(data, {
+    header: headers,
+    skipHeader: false
+  })
+
+  /* ===============================
+     WARNA LIBUR / WEEKEND
+     =============================== */
+  const range = XLSX.utils.decode_range(ws["!ref"] as string)
+
+  for (let C = 0; C <= range.e.c; C++) {
+    const headerCell = ws[XLSX.utils.encode_cell({ r: 0, c: C })]
+    if (!headerCell) continue
+
+    const day = Number(headerCell.v)
+    if (isNaN(day)) continue
+
+    if (!isHolidayOrWeekend(yearNum, monthNum, day)) continue
+
+    for (let R = 0; R <= range.e.r; R++) {
+      const addr = XLSX.utils.encode_cell({ r: R, c: C })
+      if (!ws[addr]) continue
+
+      ws[addr].s = {
+        fill: { fgColor: { rgb: "FEE2E2" } },
+        font: {
+          color: { rgb: "991B1B" },
+          bold: R === 0
+        },
+        alignment: {
+          horizontal: "center",
+          vertical: "center"
+        }
       }
-
-      for (let i=1;i<=daysInMonth;i++){
-        obj[`Tanggal ${i}`] = row.hari[i]?.duration || ""
-      }
-
-      data.push(obj)
-    })
-
-    const ws = XLSX.utils.json_to_sheet(data)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, "Lembur")
-    XLSX.writeFile(wb, `rekap_lembur_${month}.xlsx`)
+    }
   }
 
-  const exportPDF = () => {
+  ws["!cols"] = [
+    { wch: 25 },
+    { wch: 20 },
+    { wch: 10 },
+    ...Array.from({ length: daysInMonth }, () => ({ wch: 5 }))
+  ]
 
-    const doc = new jsPDF("l","pt","a4")
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, "Lembur")
+  XLSX.writeFile(wb, `rekap_lembur_${month}.xlsx`)
+}
 
-    doc.text(`Rekap Lembur Bulan ${month}`, 40, 40)
 
-    const head = [
-      ["No","Nama","Jabatan","Total",...Array.from({length:daysInMonth},(_,i)=>String(i+1))]
+
+const exportPDF = () => {
+  const doc = new jsPDF("l", "pt", "a4")
+
+  doc.text(`Rekap Lembur Bulan ${month}`, 40, 40)
+
+  const head = [
+    ["No", "Nama", "Jabatan", "Total",
+      ...Array.from({ length: daysInMonth }, (_, i) => String(i + 1))
     ]
+  ]
 
-    const body:any[] = []
+  const body: any[] = []
 
-    grouped.forEach((row:any, idx:number)=>{
-      const r:any = [idx+1,row.nama,row.jabatan,row.total]
+  grouped.forEach((row: any, idx: number) => {
+    const r: any[] = [idx + 1, row.nama, row.jabatan, row.total]
 
-      for(let i=1;i<=daysInMonth;i++){
-        r.push(row.hari[i]?.duration || "")
-      }
+    for (let i = 1; i <= daysInMonth; i++) {
+      r.push(
+        capDuration(
+          row.hari[i]?.duration,
+          yearNum,
+          monthNum,
+          i
+        )
+      )
+    }
 
-      body.push(r)
-    })
+    body.push(r)
+  })
 
-    ;(doc as any).autoTable({
-      head,
-      body,
-      startY: 60,
-      styles:{fontSize:8}
-    })
+  autoTable(doc, {
+    head,
+    body,
+    startY: 60,
+    styles: { fontSize: 8 }
+  })
 
-    doc.save(`rekap_lembur_${month}.pdf`)
-  }
+  doc.save(`rekap_lembur_${month}.pdf`)
+}
+
 
   return (
     <div className="p-6">
@@ -365,7 +445,8 @@ const isHolidayOrWeekend = (y:number,m:number,d:number) => {
 
                   const data = row.hari[i+1]
                   const isRed = isHolidayOrWeekend(yearNum,monthNum,i+1)
-
+//logic hari libur=> lembur maksimal 4 jam, hari biasa maksimal 2 jam
+                  const maxHour = isRed ? 4 : 2
                   return (
                     <td
                       key={i}
@@ -380,7 +461,7 @@ const isHolidayOrWeekend = (y:number,m:number,d:number) => {
                           : ""
                       }
                     >
-                      {data?.duration || ""}
+                      {(data?.duration ? Math.min(Number(data.duration), maxHour) : "") || ""}
                     </td>
                   )
                 })}
