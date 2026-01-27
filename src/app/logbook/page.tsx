@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import {
   FileText, User, Calendar, Plus, Trash2, Send, ChevronLeft,
-  RefreshCw, AlertTriangle, Briefcase
+  RefreshCw, AlertTriangle, Briefcase, ExternalLink, ClipboardCheck // 1. Tambahkan icon baru
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
@@ -37,6 +37,9 @@ export default function LogbookPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [statusLogbook, setStatusLogbook] = useState('')
+
+  // URL UNTUK CHECKLIST RUANGAN
+  const checklistUrl = `https://kppn-checker.vercel.app/checklist/form?worker=${encodeURIComponent(userData.fullName)}`;
 
   // --- Daftar Tugas Sesuai Jabatan ---
   const tugasPPNPN = [
@@ -261,23 +264,36 @@ export default function LogbookPage() {
         </h1>
       </header>
 
-      {/* INFO ABSEN AKTIF */}
+      {/* INFO ABSEN AKTIF + TOMBOL CEKLIST RUANGAN */}
       {!error && (
-        <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-blue-500 mb-6">
+        <div className="bg-white p-5 rounded-xl shadow-sm border-l-4 border-blue-500 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
             <p className="text-xs text-gray-500 font-bold uppercase tracking-wide">Logbook Untuk Sesi:</p>
-            <div className="flex justify-between items-end mt-1">
-                <div>
-                    <p className="text-lg font-bold text-gray-800">
-                        SHIFT {shiftName ? shiftName.toUpperCase() : '-'}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                        Tanggal Masuk: {attendanceDate}
-                    </p>
-                </div>
-                <div className={`px-3 py-1 rounded-full text-xs font-bold ${statusLogbook === 'COMPLETED' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                    {statusLogbook === 'COMPLETED' ? 'SUDAH SELESAI' : 'BELUM SELESAI'}
-                </div>
+            <p className="text-lg font-bold text-gray-800 mt-1">
+              SHIFT {shiftName ? shiftName.toUpperCase() : '-'}
+            </p>
+            <p className="text-sm text-gray-600">
+              {attendanceDate}
+            </p>
+            <div className={`inline-block mt-2 px-3 py-1 rounded-full text-[10px] font-bold ${statusLogbook === 'COMPLETED' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+              {statusLogbook === 'COMPLETED' ? 'STATUS: SELESAI' : 'STATUS: BELUM SELESAI'}
             </div>
+          </div>
+
+          {/* TOMBOL KE LINK CEKLIST RUANGAN */}
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-bold text-gray-400 uppercase">Input Khusus Ruangan:</label>
+            <a 
+              href={checklistUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-5 py-3 rounded-xl font-bold text-sm shadow-md shadow-orange-200 transition-all active:scale-95"
+            >
+              <ClipboardCheck size={18} />
+              Buka Form Checklist Ruangan
+              <ExternalLink size={14} className="opacity-70" />
+            </a>
+          </div>
         </div>
       )}
 
