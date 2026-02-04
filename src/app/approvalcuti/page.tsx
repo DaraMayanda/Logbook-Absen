@@ -35,6 +35,7 @@ type LeaveRequest = {
   profiles?: { full_name?: string; position?: string } | null
   sisa_cuti_saat_pengajuan?: number // Untuk Riwayat (Snapshot)
   durasi_hari_kerja?: number
+  leave_days?: number
   sisa_cuti_realtime?: number // Untuk Pending (Real-time)
   surat_sakit_url?: string | null
 }
@@ -85,7 +86,7 @@ export default function ApprovalCutiPage() {
         .from('leave_requests')
         .select(
           `id,user_id,leave_type,start_date,end_date,status,address,reason,approved_by,created_at,half_day,
-           sisa_cuti_saat_pengajuan, durasi_hari_kerja, 
+           sisa_cuti_saat_pengajuan, leave_days, durasi_hari_kerja, 
            surat_sakit_url, 
            profiles(full_name,position)`
         )
@@ -256,11 +257,11 @@ export default function ApprovalCutiPage() {
         return {
           'ID': lr.id,
           'Nama': lr.profiles?.full_name || '-',
-          'Sisa Cuti': (lr.sisa_cuti_saat_pengajuan??0)-(lr.durasi_hari_kerja ?? 0),
+          'Sisa Cuti': (lr.sisa_cuti_saat_pengajuan??0)-(lr.leave_days ?? 0),
           'Jabatan': lr.profiles?.position || '-',
           'Jenis Cuti': lr.leave_type || '-',
           'Periode': `${lr.start_date ? new Date(lr.start_date).toLocaleDateString('id-ID') : '-'} - ${lr.end_date ? new Date(lr.end_date).toLocaleDateString('id-ID') : '-'}`,
-          'Durasi (Hari Kerja)': lr.durasi_hari_kerja || '-',
+          'Durasi (Hari Kerja)': lr.leave_days || '-',
           'Status': lr.status || '-',
           'Tanggal Persetujui': lastApproval?.approved_at
             ? new Date(lastApproval.approved_at).toLocaleDateString('id-ID')
@@ -390,11 +391,11 @@ export default function ApprovalCutiPage() {
         const approvalLevel2 = approvals.find((a) => a.leave_request_id === lr.id && a.level === 2)
         return {
           nama: lr.profiles?.full_name || '-',
-          sisa_cuti: (lr.sisa_cuti_saat_pengajuan ?? 0)-(lr.durasi_hari_kerja??0), // <-- Menggunakan SNAPSHOT
+          sisa_cuti: (lr.sisa_cuti_saat_pengajuan ?? 0)-(lr.leave_days??0), // <-- Menggunakan SNAPSHOT
           jabatan: lr.profiles?.position || '-',
           jenis: lr.leave_type || '-',
           periode: `${formatDate(lr.start_date)} - ${formatDate(lr.end_date)}`,
-          durasi: `${lr.durasi_hari_kerja || '?'} hari`,
+          durasi: `${lr.leave_days || '?'} hari`,
           alamat: lr.address || '-',
           alasan: lr.reason || '-',
           status: lr.status || 'Menunggu',
@@ -554,7 +555,7 @@ export default function ApprovalCutiPage() {
                       <td className="border px-3 py-2 text-center">
                         {formatDate(req.start_date)} - {formatDate(req.end_date)}
                       </td>
-                      <td className="border px-3 py-2 text-center">{req.durasi_hari_kerja || '-'} hari</td>
+                      <td className="border px-3 py-2 text-center">{req.leave_days || '-'} hari</td>
                       <td className="border px-3 py-2 text-center">{req.address || '-'}</td>
 
                       {/* Alasan Cuti DENGAN Status Surat Dokter */}
