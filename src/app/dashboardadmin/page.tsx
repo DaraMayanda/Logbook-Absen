@@ -101,23 +101,51 @@ export default function DashboardAdmin() {
   const [isLoggingOut, setIsLoggingOut] = useState(false)
 
   // Fetch Profile & Total Pegawai
-  useEffect(() => {
-    const init = async () => {
-      setIsLoading(true)
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) { router.replace('/login'); return }
+ useEffect(() => {
+  const init = async () => {
+    setIsLoading(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { 
+        router.replace('/login')
+        return 
+      }
 
-        const { data: profile } = await supabase.from('profiles').select('full_name,email').eq('id', user.id).single()
-        setUserData({ fullName: profile?.full_name || 'Admin', email: user.email || 'N/A' })
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name,email,role')
+        .eq('id', user.id)
+        .single()
 
-        const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'pegawai')
-        if (count !== null) setTotalPegawai(count)
-      } catch (err) { console.error(err) } 
-      finally { setIsLoading(false) }
+      // 🔥 RBAC CHECK
+      const allowedRoles = ['admin', 'kepala_kantor', 'kasubag']
+      if (!allowedRoles.includes(profile?.role)) {
+        router.replace('/dashboard')
+        return
+      }
+
+      // ✅ lanjut kalau lolos
+      setUserData({ 
+        fullName: profile?.full_name || 'Admin', 
+        email: user.email || 'N/A' 
+      })
+
+      const { count } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('role', 'pegawai')
+
+      if (count !== null) setTotalPegawai(count)
+
+    } catch (err) { 
+      console.error(err) 
+    } finally { 
+      setIsLoading(false) 
     }
-    init()
-  }, [router])
+  }
+
+  init()
+}, [router])
 
   const handleLogout = async () => {
     setIsLoggingOut(true)

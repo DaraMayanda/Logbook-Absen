@@ -22,61 +22,101 @@ export async function middleware(request: NextRequest) {
         setAll(cookiesToSet: { name: string; value: string; options: any }[]) {
           // Loop cookie satu per satu agar Next.js 16 senang
           cookiesToSet.forEach(({ name, value, options }) => {
-            request.cookies.set({
-              name,
-              value,
-              ...options,
-            })
+            request.cookies.set({ name, value, ...options })
           })
-          
-          // Update response agar cookie ikut terkirim balik ke browser
+
           response = NextResponse.next({
             request: {
               headers: request.headers,
             },
           })
-          
+
           cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set({
-              name,
-              value,
-              ...options,
-            })
+            response.cookies.set({ name, value, ...options })
           })
         },
       },
     }
   )
 
-  // 3. Cek User (Bukan cuma getSession, tapi getUser lebih aman)
+  // 🔐 Ambil user
   const { data: { user } } = await supabase.auth.getUser()
 
   const url = request.nextUrl.clone()
-  
-  // 4. DAFTAR HALAMAN YANG DILINDUNGI
-  // Masukkan semua halaman yang HARUS login dulu baru bisa buka
+
+  // 📌 Protected routes
   const protectedPaths = [
-    '/dashboard', 
-    '/dashboardadmin', 
-    '/logbook', 
+    '/dashboard',
+    '/dashboardadmin',
+    '/logbook',
     '/rekapabsensi',
     '/pengajuancuti'
   ]
 
-  // Cek apakah user sedang membuka halaman dilindungi?
-  const isProtected = protectedPaths.some((path) => url.pathname.startsWith(path))
+  const isProtected = protectedPaths.some((path) =>
+    url.pathname.startsWith(path)
+  )
 
-  // LOGIKA PENTING:
-  // Jika masuk halaman rahasia TAPI user kosong -> TENDANG KE LOGIN
+  // 🚫 Belum login
   if (isProtected && !user) {
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  // Jika user SUDAH login TAPI buka halaman login lagi -> LEMPAR KE DASHBOARD
+  // ==============================
+  // 🔥 AMBIL ROLE
+  // ==============================
+  let role: string | null = null
+
+  if (user) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    role = profile?.role ?? null
+  }
+
+  // ==============================
+  // 🎯 ROLE MAPPING
+  // ==============================
+  const adminRoles = ['admin', 'kepala_kantor', 'kasubag']
+  const userRoles = ['pegawai']
+
+  const isAdmin = adminRoles.includes(role || '')
+  const isUser = userRoles.includes(role || '')
+
+  // ==============================
+  // 🔁 REDIRECT SETELAH LOGIN
+  // ==============================
   if (url.pathname === '/login' && user) {
-    url.pathname = '/dashboard'
+    if (isAdmin) {
+      url.pathname = '/dashboardadmin'
+    } else {
+      url.pathname = '/dashboard'
+    }
     return NextResponse.redirect(url)
+  }
+
+  // ==============================
+  // 🔒 PROTEKSI DASHBOARD ADMIN
+  // ==============================
+  if (url.pathname.startsWith('/dashboardadmin')) {
+    if (isUser) {
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
+    }
+  }
+
+  // ==============================
+  // 🔒 PROTEKSI DASHBOARD USER
+  // ==============================
+  if (url.pathname.startsWith('/dashboard')) {
+    if (isAdmin) {
+      url.pathname = '/dashboardadmin'
+      return NextResponse.redirect(url)
+    }
   }
 
   return response
