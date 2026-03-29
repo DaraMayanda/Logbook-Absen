@@ -171,6 +171,19 @@ export default function CheckInPage() {
       const shiftStart = new Date(todayDateWib + 'T' + lockTime);
       const statusAbsen = now > shiftStart ? 'Terlambat' : 'Hadir';
 
+      // Tambah notifikasi jika terlambat
+      const lateMinutes = Math.max(0, Math.floor((now.getTime() - shiftStart.getTime()) / 60000));
+        if (statusAbsen === 'Terlambat') {
+          const confirmLate = window.confirm(
+            `Anda terlambat ${lateMinutes} menit. Tetap lanjutkan absen atau mungkin anda absen malam?`
+          );
+
+          if (!confirmLate) {
+            setIsSubmitting(false);
+            return;
+          }
+        }
+
       const { data: attendanceData, error: attendanceError } = await supabase
         .from('attendances')
         .insert([{
